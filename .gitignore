@@ -166,3 +166,5 @@ _build/
 *.alg
 *.gl
 
+*.fls
+*.fdb_latexmk
