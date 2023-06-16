@@ -149,10 +149,10 @@ dmypy.json
 *.run.xml
 *.bcf
 *.synctex.gz
-theory/models.pdf
 
 # Output directories
 _build/
+theory/build
 
 # Sublime Text
 *.sublime-project

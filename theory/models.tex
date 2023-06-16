@@ -27,12 +27,22 @@
 \DeclareMathOperator{\tr}{tr}
 \DeclareMathOperator{\re}{Re}
 \DeclareMathOperator{\im}{Im}
+\DeclareMathOperator{\argmax}{\arg\max}
 \DeclareMathOperator{\pad}{pad}
 \graphicspath{ {./figs/} }
+\newcommand{\inv}{^{-1}}
+\newcommand{\pd}{\partial}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\NN}{\mathcal{N}}
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\cb}[1]{\left\{ #1 \right\}}
+\newcommand{\pn}[1]{\left( #1 \right)}
+\newcommand{\bc}[1]{\left[ #1 \right]}
+\newcommand{\eps}{\varepsilon}
 \usepackage{titling}
 
 \title{Size norm model ideas}
-\author{Caleb Weinreb}
+\author{Caleb Weinreb and Kai Fox}
 \date{May 2023}
 
 \begin{document}
@@ -41,26 +51,205 @@
 
 \section{Modeling framework}
 
-Suppose we have pose data $\{y_t\}_{t=1}^T$ and $\{y'_t\}_{t=1}^{T'}$ for a pair of animals, where $y_t, y'_t \in \mathbb{R}^{KD}$, represent the positions of $K$ keypoints in $D$ dimensions. For now we will assume that the keypoints are in egocentric coordinates, meaning each animal is always centered and pointing in the same direction. Let's also assume the data have been rescaled to account for gross size differences, so that all remaining differences are subtleties of body shape. Our goal is to define a canonical (low-dimensional) pose space and learn how the data from each animal map onto it. Put in terms of generative modeling, we wish to explain each animal's observed pose $y_t$ as the (noisy) realization of some latent pose state $z_t \in \mathbb{R}^M$, where the space of latent states is shared between animals. This can be formalized as follows:
+Suppose we have pose data $\{y_t\}_{t=1}^T$ and $\{y'_t\}_{t=1}^{T'}$ for a pair of animals, where $y_t, y'_t \in \mathbb{R}^{KD}$, represent the positions of $K$ keypoints in $D$ dimensions. For now we will assume that the keypoints are in egocentric coordinates, meaning each animal is always centered and pointing in the same direction. Let's also assume the data have been rescaled to account for gross size differences, so that all remaining differences are subtleties of body shape. Our goal is to define a canonical (low-dimensional) pose space and learn how the data from each animal map onto it. Put in terms of generative modeling, we wish to explain each animal's observed pose $y_t$ as the (noisy) realization of some latent pose state $x_t \in \mathbb{R}^M$, where the space of latent states is shared between animals. This can be formalized as follows:
 %
 \begin{align}
-    y_t & = F(z_t) + \xi \ \text{where} \ 
-    \xi \sim \mathcal{N}(0, \Sigma) \ \text{and} \ 
-    z_t \sim P_z \\
-    y_t' & = F'(z_t') + \xi' \ \text{where} \ 
-    \xi' \sim \mathcal{N}(0, \Sigma') \ \text{and} \ 
-    z_t' \sim P_z'
+    y_t & = F(x_t) + \xi \ \text{where} \ 
+    \xi \sim \mathcal{N}(0, R) \ \text{and} \ 
+    x_t \sim P_x \\
+    y_t' & = F'(x_t') + \xi' \ \text{where} \ 
+    \xi' \sim \mathcal{N}(0, R') \ \text{and} \ 
+    x_t' \sim P_x'
 \end{align}
 %
-where $F, F'$ are respective functions mapping from the latent space to each animals pose space, and $P_z, P_z'$ are distributions over latent states. Ideally, we want $F$ and $F'$ to capture morphological differences between the two animals, and $P_z, P_z'$ to capture differences in the frequency of behaviors. We also want to make sure that $F$ and $F'$ are as similar as possible, i.e. to avoid arbitrary rotations of the latent space for one animal compared to the other. Here are some ideas for how to achieve these goals:
+where $F, F'$ are respective functions mapping from the latent space to each animals pose space, and $P_x, P_x'$ are distributions over latent states. Ideally, we want $F$ and $F'$ to capture morphological differences between the two animals, and $P_x, P_x'$ to capture differences in the frequency of behaviors. We also want to make sure that $F$ and $F'$ are as similar as possible, i.e. to avoid arbitrary rotations of the latent space for one animal compared to the other. Here are some ideas for how to achieve these goals:
 \begin{itemize}
-    \item \textbf{Shared Gaussian pose distribution:} We could start with a simple shared distribution over the latent space $P_z = P_z' = \mathcal{N}(0, I_M)$. 
-    \item  \textbf{Gaussian mixture pose distribution:} Another option is to model $P_z$ and $P_z'$ as Gaussian mixtures, where the mixture components are shared between animals but the mixture weights are allowed to vary. This would naturally capture differences in the frequency of behaviors between animals.
+    \item \textbf{Shared Gaussian pose distribution:} We could start with a simple shared distribution over the latent space $P_x = P_x' = \mathcal{N}(0, I_M)$. 
+    \item  \textbf{Gaussian mixture pose distribution:} Another option is to model $P_x$ and $P_x'$ as Gaussian mixtures, where the mixture components are shared between animals but the mixture weights are allowed to vary. This would naturally capture differences in the frequency of behaviors between animals.
     \item \textbf{Affine pose mappings:} We probably want to assume that $F$ and $F'$ are affine, i.e. that $F(z) = Az + b$ for some $A \in \mathbb{R}^{KD \times M}$ and $b \in \mathbb{R}^{KD}$. 
-    \item \textbf{Ensuring similar mappings:} There are a few ways to make sure that $F$ and $F'$ are similar. One is to model their parameters as additive perturbations of a common mapping, e.g. $F = (A + \Delta A, b + \Delta b)$, $F' = (A + \Delta A', b + \Delta b')$ where $A,b$ can vary broadly but $\Delta A, \Delta b, \Delta A', \Delta b'$ have a tight prior. Another option is to perturb the common mapping multiplicatively. 
-
+    \item \textbf{Ensuring similar mappings:} There are a few ways to make sure that $F$ and $F'$ are similar. One is to model their parameters as additive perturbations of a common mapping, e.g. $F = (A + \Delta A, b + \Delta b)$, $F' = (A + \Delta A', b + \Delta b')$ where $A,b$ can vary broadly but $\Delta A, \Delta b, \Delta A', \Delta b'$ have a tight prior. Another option is to perturb the common mapping multiplicatively.
 \end{itemize}
 
+A core simplifying assumption of all of our pose space models $P_z$ will be independence at each time step. In this way our model is a deepening of keypoint-moseq's affine transform from pose space to keypoint space $y \sim \NN(Cx+d, R)$, where we vary the transform per-mouse and investigate other transforms, while ignoring all dynamical character of behavior.
+
+\label{sec:paired-down-gmm}
+\subsection{Paired-down Gaussian mixture model}
+
+Before deriving EM steps for our full desired context, we begin with a paired-down model for only one animal, where we take $F = \mathrm{Id}$ and $\Sigma = \eps I$
+\begin{align}
+    z_t & \sim \text{Cat}(\pi) &
+    x_t & \sim \mathcal{N}(m_{z_t}, Q_{z_t}) &
+    y_t & \sim \mathcal{N}(x_t, \eps I)
+\end{align}
+A couple of notes:
+\begin{itemize}
+    \item Until we migrate to a Bayesian formulation, we do not have parameter priors like those specified in keypoint moseq or in Section \ref{full-model-derivation}. The EM updates will be simpler to work with, so we're starting in this prior-less regime. We can then derive updates incorporating priors as in Scott Linderman's Stats 305C lecture notes (\href{https://github.com/slinderman/stats305c/blob/spring2023/slides/lecture08-em.pdf}{github}) or Murphy 11.4.2.8 [cite]
+    \item Because of the symmetry between $\eps$ and $Q_k$, will fix $\eps$ and treat it as a hyperparameter. Once the morph functions are not identity, we will impose separate priors on uniform keypoint error $R$ and the scale factors of animals, which will break this symmetry.
+\end{itemize}
+Treating $z_t, x_t$ as latent variables, $\theta = (\pi, m_k, Q_k)$ as a parameter vector, and $\eps$ as a hyperparameter, this model can be fit using expectation maximization, as described in Section \ref{sec:em-general}
+
+
+\label{sec:em-general}
+\subsection{Expectation maximization}
+
+In expectation maximization, jointly optimize the log likelihood $\ell(\theta)$ of a set of model parameters $\theta$ given observations $y$. In particular we do so while taking the expectation over unknown values of some latent variables --- $z$ and $x$ in our case --- according to an auxilliary distribution $q(x, z | y, \theta^*) \propto P(x, z | y, \theta^*)$ for a current parameter estimate $\theta^*$. The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that taking this expectation produces a lower bound for the likelihood $\ell(\theta)$, namely
+\begin{align}
+    \ell(\theta) \geq A(\theta, \theta^*) := \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta)
+\end{align}
+The expectation maximization algorithm splits the problem of iteratively optimizing $\ell$ into two blocks: in the E-step we will calculate $q$ using our current parameter estimates $\theta^*$, so that in the M-step we can calculate $\argmax_\theta A(\theta, \theta^*)$ to arrive at new parameter estimates $\theta^*_{\text{new}}$,
+\begin{align}
+    \theta^*_{\text{new}} := \argmax_{\theta} \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) \label{eq:em-argmax}
+\end{align}
+The key theoretical guarantee is that the new parameter estimates monotonically increase in likelihood, that is $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$.
+
+
+
+\textbf{E step:}\ \ The core simplifying assumption from Section \ref{sec:paired-down-gmm} of independence across time allows us to write $q$ as a product distribution of i.i.d. latent variables $x, z$ at each time point, $q_t(x, z) \propto P(x_t = x, z_t = z \mid y_t, \theta^*)$.
+
+Our first move in calculating $q_t$ will be be to apply Bayes' rule and drop the denominator, since it does not vary in $\theta$ and therefore cannot affect computation of the $\argmax$ in Equation \ref{eq:em-argmax}:
+\begin{align}
+    \label{eq:latent-posterior-bayes}
+    P(x_t = x, z_t = z \mid y_t, \theta^*) &= \frac{P(y_t \mid x_t = x, z_t = z, \theta^*)P(x_t = x, z_t = z \mid \theta^*)}{P(y_t \mid \theta^*)} \\
+    q_t(x, z) &= P(y_t \mid x_t = x, z_t = z, \theta^*)P(x_t = x, z_t = z \mid \theta^*) \label{eq:general-qt}
+\end{align}
+We will then aim to compute this expression for $q_t$ analytically for each model.
+
+\textbf{M step:}\ \ For simple models, maximization of $A$ can be achieved analytically as well, but in general to improve model iteration speed we will handle the M-step using gradient ascent. The goal of our M-steps in this document will therefore be to calculate integral-free functional forms of $A$, and potentially their gradients, to enable numerical optimization.
+
+
+\label{sec:em-results-paired-down}
+\subsection{EM algorithm for the paired-down mixture model}
+
+
+
+\section{Derivaiton of EM for the paired-down mixture model}
+
+To optimize this model we derive an EM algorithm, in which optimize the log likelihood $\ell(\theta)$ of our parameters $\theta = (\pi, m, Q, R)$. In particular we do so using a lower bound defined in terms a current parameter estimate $\theta^*$ and an auxilliary distribution $q(x, z | y, \theta^*) = P(x, z | y, \theta^*)$
+\begin{align}
+    Q(\theta, \theta^*) &= \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta)
+\end{align}
+The core simplifying of $P_z$ as a Gaussian mixture model instead of an SLDS is independence pose states across time, allowing us to write $q$ as a product distribution of i.i.d. variables at each time point
+\begin{align}
+    Q(\theta, \theta^*) &= \sum_{t} \EE_{q(x_t, z_t \mid y_t, \theta^*)} \log P(y_t, x_y, z_t \mid \theta).
+\end{align}
+For expectation maximization, we separate the work into two blocks: in the E-step, we will calculate $q$, so that in the M-step we can optimize:
+\begin{align}
+    \argmax_{\theta} Q(\theta, \theta^*) = \argmax_{\theta} \int_{x_t, z_t} \log P(y_t, x_y, z_t \mid \theta)\; dq 
+\end{align}
+
+
+\textbf{E step:}\ \ In the ``expectation'' step, we calculate likelihoods for our latents $x,z$ conditioned on the current parameter estimates $\theta^*$, which we will use to define the auxilliary distribution $q$ in our lower bound for the likelihood $\ell$.
+The first move will be to ignore the denominator, since it does not vary in $\theta$ and so drops out of the $\argmax$ in \ref{eq:em-argmax}, then to remove unneccesary variables from conditional terms, and finally to apply the specified distirbutions of our model:
+\begin{align}
+    \label{eq:latent-posterior-bayes-paired-down}
+    P(x_t, z_t \mid y_t, \theta^*) &= \frac{P(y_t \mid x_t, z_t, \theta^*)P(x_t, z_t \mid \theta^*)}{P(y_t \mid \theta^*)} \\
+    &\propto P(y_t \mid x_t, R^*) P(x_t \mid m^*_{z_t}, Q^*_{z_t}) P(z_t \mid \pi^*) \\
+    &= \NN(y_t \mid x_t, R^*) \NN(x_t \mid m^*_{z_t}, Q^*_{z_t}) \pi_{z_t}^*
+\end{align}
+We now move to write the functional form we will use for our auxilliary distribution $q$, which should be an unnormalized distribution equal to the numerator of equation \ref{eq:latent-posterior-bayes}. In general, the product of normals PDFs is proportional to another normal PDF (we will show why the proportionality constant is $P(y_t | z_t, \theta^*)$ momentarily),
+\begin{align}
+    q_t(x, z) &= \pi_{z}^*\, P(y_t | z, \theta^*)\, \NN(x \mid \mu^*_{z, t}, \Sigma^*_{z, t}) \\
+    \Sigma_{z, t}^* &= R^* \pn{R^* + Q^*_{z}}\inv Q_{z} \\
+    \mu_{z, t}^* &= \Sigma_{z, t}^* \pn{ {R^*}\inv y_t + {Q^*_z}\inv m_{z} }
+\end{align}
+To understand where our proportionality constant $P(y_t | z, \theta^*)$ arises from, we can marginalize over $x$ using two different forms of the latent posterior $P(x_t, z_t | y_t, \theta^*)$:
+\begin{align}
+    \int_x P(x, z_t \mid y_t, \theta^*)
+    &= P(z_t \mid y_t, \theta^*)
+    = \frac{P(y_t | z_t, \theta^*) P(z_t \mid \theta^*)}{P(y_t | \theta^*)}
+    =  \frac{P(y_t | z_t, \theta^*) \pi_{z}^*}{P(y_t | \theta^*)}\\
+    %
+    \int_x P(x, z_t \mid y_t, \theta^*)
+    &= \int_x \frac{q_t(x, z_t)}{P(y_t | \theta^*)}
+    = \int_x \frac{K \pi_{z}^*\, \NN(x \mid \mu^*_{z, t}, \Sigma^*_{z, t})}{P(y_t | \theta^*)}
+    =  \frac{K \pi_{z}^*}{P(y_t | \theta^*)}
+\end{align}
+In computations, it will be useful to have a more explicit form of this proportionality constant,
+\begin{align}
+    P(y_t | z, \theta^*) =& \bc{\pn{2\pi}^{-D} \pn{\abs{R^*} \abs{Q_z^*}}\inv \abs{ \Sigma^*_{z, t}}}^{1/2} \times \\
+     & \exp\cb{-\frac{1}{2}\pn{y_t^T{R^*}\inv y_t \;+\; {m_z^*}^TB\inv {m_z^*} \;-\; {\mu_{z, t}^*}^T {\Sigma_{z, t}^*}\inv {\mu_{z, t}^*}}}
+\end{align}
+which we derive in an abstract setting to simplify notation:
+\begin{proposition}
+    The product normal PDFs evaluated at a point, $N_a = \NN(x\mid a, A)$ and $N_b = \NN(x\mid b, B)$, is proportional to $N_c = \NN(x\mid c, C)$ with and $C = A\pn{A + B}\inv B$ and $c = CA\inv a + CB\inv b$. Moreover if $Z_\Sigma = \pn{2\pi}^{-D/2}\abs{\Sigma}^{-1/2}$ is the usual Gaussian normalization factor for covariance matrix $\Sigma$, then equiality is achieved using the following proportionality constant:
+    \begin{align}
+        N_a N_b = \frac{Z_aZ_b}{Z_c} \exp\cb{-\frac{1}{2}\pn{a^TA\inv a \,+\, b^TB\inv b \,-\, c^T C\inv c}} N_c.
+    \end{align}
+\end{proposition}
+\begin{proof}
+The proportionality result is standard, so we leave that proof to the reader and use the result to derive our proportionality constant. Let $E_i$ be the exponent in the normal pdf $N_i$, namely $E_a = (x - a)^TA\inv (x - a)$. Then the exponents of $N_aN_b$, $E_a + E_b$, and the exponent of $N_c$, $E_c$ only differ in those terms which are constant in $x$, i.e., 
+\begin{align}
+    \pn{E_a + E_b} - E_c = a^TA\inv a + b^TB\inv b + c^T C\inv c
+\end{align}
+Finally using the Gaussian PDF normalization constant $Z_\Sigma = \pn{2\pi}^{-D/2}\abs{\Sigma}^{-1/2}$, we can write the constant $K$ such that $N_aN_b = K N_c$ as $\frac{Z_aZ_b}{Z_c} \exp\cb{-\frac{1}{2}\pn{E_a + E_b - E_c}}$.
+\end{proof}
+
+\textbf{M step:}\ \ In our ``maximization'' step, we find optima of $Q(\theta, \theta^*)$ using its partial derivativeds with respect to the parameter variables $(\pi, m, Q, R)$. These derivations closely follow the standard ones for expectation maximization of a gaussian mixture model. Expanding equation \ref{eq:em-argmax}, we arrive at three terms that will be the target of these partial derivatives
+\begin{align}
+    \argmax_{\theta} \sum_{t}\sum_{z}\int_{x} q_t(x, z) \bc{ \log P(y_t \mid x, R) + \log P(x \mid m_{z}, Q_{z}) + \log P(z \mid \pi)}
+\end{align}
+In each derivative, all but one $\log P$ term will be constant in the variable, and the partial derivative will move inside the summation and integration variables. In particular $q$ will also be constant in the variable.   
+
+\textit{Optimum in $m$.}\ \ For each component mean $m_k$, terms $z\neq k$ are constant and we can calculate the usual log normal PDF derivative:
+\begin{align}
+    \frac{\pd Q}{\pd m_k}
+    &=  \sum_{t}\int_{x} q_t(x, k) \frac{\pd}{\pd m_k} \log P(x \mid m_k, Q_k) \,dx \\
+    &=  \sum_{t}\int_{x} q(x, k) Q_k\inv (x - m_k) \,dx
+\end{align}
+where for brevity we drop $t$ indexes on iterated variables and summarize $q(\cdot \mid y_t, \theta^*)$ as in the E step. Solving for local optima yields
+\begin{align}
+    m_k = \frac{\sum_{t} \int_x q_t(x, k) x \,dx}{\sum_{t} \int_x q_t(x, k) \,dx} 
+\end{align}
+% which is simply the time average of first modes of the random varables $x\sim q_t(x, k)$, namely $\EE_t \mu^*_{k, t}$:
+% \begin{align}
+%     m_k = \frac{\pi_k\sum_t\int_x x\, \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})}{\pi_k\sum_t\int_x \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})}
+% \end{align}
+
+\textit{Optimum in $Q$.}\ \ For each component covariance $Q_k$, terms $z\neq k$ are constant and we can again use the log normal PDF derivative: 
+\begin{align}
+    \frac{\pd Q}{\pd Q_k}
+    &=  \sum_{t}\int_{x} q_t(x, k) \frac{\pd}{\pd Q_k} \log P(x \mid m_k, Q_k) \,dx \\
+    &=  \frac{1}{2} \sum_{t}\int_{x} q(x, k) \bc{ -Q_k\inv + Q_k\inv (x - m_k) (x - m_k)^T Q_k\inv } \,dx
+\end{align}
+and solving for local optima yields
+\begin{align}
+    Q_k = \frac{\sum_{t} \int_x q_t(x, k) (x - m_k) (x - m_k)^T \,dx}{\sum_{t} \int_x q_t(x, k) \,dx}
+\end{align}
+%which is the centered second mode of the random varable $x\sim q_t(x, k)$, namely $\Sigma^*_{k, t}$.
+
+\textit{Optimum in $\pi$.}\ \ The mixture weights parameter is subject to the constraint $\sum_z \pi_z = 1$, so we reqiure Lagrangian optimization. Introducing a lagrangian $L = Q + \lambda \pn{1 - \sum\pi}$ yields the partial derivative
+\begin{align}
+    \frac{\pd L}{\pd \pi_k} &= \sum_{t}\int_{x} \frac{\pd }{\pd \pi_k} q_t(x, k) \log \pi_{k} - \lambda \\
+\end{align}
+where again all terms $z\neq k$ are constant
+
+\subsection{Problem: cluster mean update not sensitive to latents}
+
+Something in this derivation is wrong in that (with $R\equiv 0$, making the model a normal GMM), it would update cluster means to an average of all observed points.
+\begin{align}
+    \mu_{z,t}^* &= Q^*_z (R^* + Q^*_z)\inv y_t + R^* (R^* + Q_z^*)\inv m^*_z \rightarrow y_t\\
+    \Sigma_{z, t}^* &= R^*(R^* + Q_z^*)\inv Q_z^* \rightarrow 0
+\end{align}
+so our likelihood of a having a particular latent value $x$ coming from cluster $z$ at time $t$ rather becomes $q_t(x, z) \rightarrow \pi_z\delta_{y_t}$. This looks very different from the corresponding likelihood in a standard GMM where there is no $x$ variable but simply $y$'s sampled from clusters indexed by $z$:
+\begin{align}
+    q^{\text{GMM}}_{t}(z) = \pi^*_z \NN(y_t \mid m_z, Q_z)
+\end{align}
+Then the update for $m$ becomes
+\begin{align}
+    m_k &= \frac{\sum_t\int_x x\, \pi^*_k\, \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})}{\sum_t\int_x \pi^*_k\, \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})} \\
+    &\rightarrow \frac{\pi^*_k \sum_t\int_x x\,  \delta_{y_t}(x)}{\pi^*_k \sum_t\int_x \delta_{y_t}(x)}
+    = \frac{\sum_{t} y_t}{\sum_t 1}
+\end{align}
+The issue also doesn't appear to be specifically with the way we've set $R\equiv 0$ or the functional form of $\mu^*, \sigma^*$: the updates for $m$ don't make sense even in without that clamping and expanding those variables:
+\begin{align}
+    m_k &= \frac{\pi_k\sum_t\int_x x\, \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})}{\pi_k\sum_t\int_x \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})} \\
+   &= \frac{\sum_t \mu^*_{k, t}}{\sum_t 1}
+\end{align}
+Our $ \mu^*_{k, t} $ is the mean of the resulting normal from the product $\NN(x \mid y_t, R^*) \NN(x \mid m^*_{k}, Q^*_{k})$ --- an average of $y_t$ and $ m^*_{k}$ according to weighted by transforms of the coviarance matrices --- so the update is to the same average of $m^*_k$ and the time average of $y_t$, again with no sensitivity to the latent cluster assignments.
+
+
+
+\label{full-model-derivation}
 \section{Optmizing the mixture of linear Gaussians}
 
 We assume the following generative model:
@@ -79,6 +268,7 @@ where $i$ indexes animals, $t$ indexes frames, $x_t^i, y_t^i \in \mathbb{R}^{KD}
 & = \int_{x_t^i} \mathcal{N}(x_t^i \mid \mu, \Sigma) \log \mathcal{N}(x_t^i \mid m_{z_t^i}, Q_{z_t^i}) + \log \pi^i_{z_t^i} + \text{const.} \\
 & = \mathcal{N}(\mu \mid m_{z_t}^i, Q_{z_t}^i) - \tr [Q_{z_t^i}^{-1}\Sigma] + \log \pi^i_{z_t^i} + \text{const.}
 \end{align}
+
 
 
 \end{document}
