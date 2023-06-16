@@ -52,7 +52,7 @@
 
 \section{Modeling framework}
 
-Suppose we have pose data $\{y_t\}_{t=1}^T$ and $\{y'_t\}_{t=1}^{T'}$ for a pair of animals, where $y_t, y'_t \in \mathbb{R}^{KD}$, represent the positions of $K$ keypoints in $D$ dimensions. For now we will assume that the keypoints are in egocentric coordinates, meaning each animal is always centered and pointing in the same direction. Let's also assume the data have been rescaled to account for gross size differences, so that all remaining differences are subtleties of body shape. Our goal is to define a canonical (low-dimensional) pose space and learn how the data from each animal map onto it. Put in terms of generative modeling, we wish to explain each animal's observed pose $y_t$ as the (noisy) realization of some latent pose state $x_t \in \mathbb{R}^M$, where the space of latent states is shared between animals. This can be formalized as follows:
+Suppose we have pose data $\{y_t\}_{t=1}^T$ and $\{y'_t\}_{t=1}^{T'}$ for a pair of animals, where $y_t, y'_t \in \mathbb{R}^{KD}$, represent the positions of $K$ keypoints in $D$ dimensions. For now, we will assume that the keypoints are in egocentric coordinates, meaning each animal is always centered and pointing in the same direction. Let's also assume the data have been rescaled to account for gross size differences, so that all remaining differences are subtleties of body shape. Our goal is to define a canonical (low-dimensional) pose space and learn how the data from each animal map onto it. Put in terms of generative modeling, we wish to explain each animal's observed pose $y_t$ as the (noisy) realization of some latent pose state $x_t \in \mathbb{R}^M$, where the space of latent states is shared between animals. This can be formalized as follows:
 %
 \begin{align}
     y_t & = F(x_t) + \xi \ \text{where} \ 
@@ -63,20 +63,20 @@ Suppose we have pose data $\{y_t\}_{t=1}^T$ and $\{y'_t\}_{t=1}^{T'}$ for a pair
     x_t' \sim P_x'
 \end{align}
 %
-where $F, F'$ are respective functions mapping from the latent space to each animals pose space, and $P_x, P_x'$ are distributions over latent states. Ideally, we want $F$ and $F'$ to capture morphological differences between the two animals, and $P_x, P_x'$ to capture differences in the frequency of behaviors. We also want to make sure that $F$ and $F'$ are as similar as possible, i.e. to avoid arbitrary rotations of the latent space for one animal compared to the other. Here are some ideas for how to achieve these goals:
+where $F, F'$ are respective functions mapping from the latent space to each animal's pose space, and $P_x, P_x'$ are distributions over latent states. Ideally, we want $F$ and $F'$ to capture morphological differences between the two animals, and $P_x, P_x'$ to capture differences in the frequency of behaviors. We also want to make sure that $F$ and $F'$ are as similar as possible, i.e. to avoid arbitrary rotations of the latent space for one animal compared to the other. Here are some ideas for how to achieve these goals:
 \begin{itemize}
     \item \textbf{Shared Gaussian pose distribution:} We could start with a simple shared distribution over the latent space $P_x = P_x' = \mathcal{N}(0, I_M)$. 
-    \item  \textbf{Gaussian mixture pose distribution:} Another option is to model $P_x$ and $P_x'$ as Gaussian mixtures, where the mixture components are shared between animals but the mixture weights are allowed to vary. This would naturally capture differences in the frequency of behaviors between animals.
+    \item  \textbf{Gaussian mixture pose distribution:} Another option is to model $P_x$ and $P_x'$ as Gaussian mixtures, where the mixture components are shared between animals, but the mixture weights are allowed to vary. This would naturally capture differences in the frequency of behaviors between animals.
     \item \textbf{Affine pose mappings:} We probably want to assume that $F$ and $F'$ are affine, i.e. that $F(z) = Az + b$ for some $A \in \mathbb{R}^{KD \times M}$ and $b \in \mathbb{R}^{KD}$. 
     \item \textbf{Ensuring similar mappings:} There are a few ways to make sure that $F$ and $F'$ are similar. One is to model their parameters as additive perturbations of a common mapping, e.g. $F = (A + \Delta A, b + \Delta b)$, $F' = (A + \Delta A', b + \Delta b')$ where $A,b$ can vary broadly but $\Delta A, \Delta b, \Delta A', \Delta b'$ have a tight prior. Another option is to perturb the common mapping multiplicatively.
 \end{itemize}
 
-A core simplifying assumption of all of our pose space models $P_z$ will be independence at each time step. In this way our model is a deepening of keypoint-moseq's affine transform from pose space to keypoint space $y \sim \NN(Cx+d, R)$, where we vary the transform per-mouse and investigate other transforms, while ignoring all dynamical character of behavior.
+A core simplifying assumption of all of our pose space models $P_z$ will be independence at each time step. In this way our model is a deepening of keypoint-moseq's affine transform from pose space to keypoint space $y \sim \NN(Cx+d, R)$, where we vary the transform per-mouse and investigate other transforms, while ignoring all dynamical character of behavior. 
 
-\label{sec:paired-down-gmm}
-\subsection{Paired-down Gaussian mixture model}
+\label{sec:pared-down-gmm}
+\subsection{Pared-down Gaussian mixture model}
 
-Before deriving EM steps for our full desired context, we begin with a paired-down model for only one animal, where we take $F = \mathrm{Id}$ and $R = \eps I$
+Before deriving EM steps for our full desired context, we begin with a pared-down model for only one animal, where we take $F = \mathrm{Id}$ and $R = \eps I$
 \begin{align}
     z_t & \sim \text{Cat}(\pi) &
     x_t & \sim \mathcal{N}(m_{z_t}, Q_{z_t}) &
@@ -84,7 +84,7 @@ Before deriving EM steps for our full desired context, we begin with a paired-do
 \end{align}
 A couple of notes:
 \begin{itemize}
-    \item Until we migrate to a Bayesian formulation, we do not have parameter priors like those specified in keypoint moseq or in Section \ref{full-model-derivation}. The EM updates will be simpler to work with, so we're starting in this prior-less regime. We can then derive updates incorporating priors as in Scott Linderman's Stats 305C lecture notes (\href{https://github.com/slinderman/stats305c/blob/spring2023/slides/lecture08-em.pdf}{github}) or Murphy 11.4.2.8 [cite]
+    \item Until we migrate to a Bayesian formulation, we do not have parameter priors like those specified in keypoint-moseq or in Section \ref{full-model-derivation}. The EM updates will be simpler to work with, so we're starting in this prior-less regime. We can then derive updates incorporating priors as in Scott Linderman's Stats 305C lecture notes (\href{https://github.com/slinderman/stats305c/blob/spring2023/slides/lecture08-em.pdf}{github}) or Murphy 11.4.2.8 [cite]
     \item Because of the symmetry between $\eps$ and $Q_k$, will fix $\eps$ and treat it as a hyperparameter. Once the morph functions are not identity, we will impose separate priors on uniform keypoint error $R$ and the scale factors of animals, which will break this symmetry. For forward-compatibility, we will work without the assumption $R = \eps I$, however in implementing this model the parameter will be fixed.
 \end{itemize}
 Treating $z_t, x_t$ as latent variables, $\theta = (\pi, m_k, Q_k)$ as a parameter vector, and $\eps$ as a hyperparameter, this model can be fit using expectation maximization, as described in Section \ref{sec:em-general}
@@ -93,7 +93,7 @@ Treating $z_t, x_t$ as latent variables, $\theta = (\pi, m_k, Q_k)$ as a paramet
 \label{sec:em-general}
 \subsection{Expectation maximization}
 
-In expectation maximization, jointly optimize the log likelihood $\ell(\theta)$ of a set of model parameters $\theta$ given observations $y$. In particular we do so while taking the expectation over unknown values of some latent variables --- $z$ and $x$ in our case --- according to an auxilliary distribution $q(x, z | y, \theta^*) \propto P(x, z | y, \theta^*)$ for a current parameter estimate $\theta^*$. The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that taking this expectation produces a lower bound for the likelihood $\ell(\theta)$, namely
+In expectation maximization, jointly optimize the log likelihood $\ell(\theta)$ of a set of model parameters $\theta$ given observations $y$. In particular, we do so while taking the expectation over unknown values of some latent variables --- $z$ and $x$ in our case --- according to an auxiliary distribution $q(x, z | y, \theta^*) \propto P(x, z | y, \theta^*)$ for a current parameter estimate $\theta^*$. The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that taking this expectation produces a lower bound for the likelihood $\ell(\theta)$, namely
 \begin{align}
     \ell(\theta) \geq A(\theta, \theta^*) := \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta)
 \end{align}
@@ -105,9 +105,9 @@ The key theoretical guarantee is that the new parameter estimates monotonically 
 
 
 
-\textbf{E step:}\ \ The core simplifying assumption from Section \ref{sec:paired-down-gmm} of independence across time allows us to write $q$ as a product distribution of i.i.d. latent variables $x, z$ at each time point, $q_t(x, z) \propto P(x_t = x, z_t = z \mid y_t, \theta^*)$.
+\textbf{E step:}\ \ The core simplifying assumption from Section \ref{sec:pared-down-gmm} of independence across time allows us to write $q$ as a product distribution of i.i.d. latent variables $x, z$ at each time point, $q_t(x, z) \propto P(x_t = x, z_t = z \mid y_t, \theta^*)$.
 
-Our first move in calculating $q_t$ will be be to apply Bayes' rule and drop the denominator, since it does not vary in $\theta$ and therefore cannot affect computation of the $\argmax$ in Equation \ref{eq:em-argmax}:
+Our first move in calculating $q_t$ will be to apply Bayes' rule and drop the denominator, since it does not vary in $\theta$ and therefore cannot affect computation of the $\argmax$ in Equation \ref{eq:em-argmax}:
 \begin{align}
     \label{eq:latent-posterior-bayes}
     P(x_t = x, z_t = z \mid y_t, \theta^*) &= \frac{P(y_t \mid x_t = x, z_t = z, \theta^*)P(x_t = x, z_t = z \mid \theta^*)}{P(y_t \mid \theta^*)} \\
@@ -124,16 +124,16 @@ Rewriting Eq. \ref{eq:em-argmax} using timepoint independence and expanding the 
 The main requirement to enable numerical computation and differentiation of $\theta^*_{\text{new}}$ will be to evaluate the integral in $x$. 
 There are a couple of considerations also for how we will treat $\pi$, due to the constraint $\sum \pi = 1$:
 \begin{itemize}
-    \item We can work where possible to arrive at analytical optima for $\pi$. The results should be similar across models, always corresponding to the vanilla GMM result ${\pi_k}_{\text{new}} = \frac{1}{N}\sum_t q_t(k)$. However it is not clear what will happen when priors are introduced. \textbf{We will begin with this approach.}
+    \item We can work where possible to arrive at analytical optima for $\pi$. The results should be similar across models, always corresponding to the vanilla GMM result ${\pi_k}_{\text{new}} = \frac{1}{N}\sum_t q_t(k)$. However, it is not clear what will happen when priors are introduced. \textbf{We will begin with this approach.}
     \item The model could be reformulated with $\pi = \bar{\pi} / \sum\bar{\pi}$, though standard formulas for working with priors may need to be updated accordingly.
     \item Once a Dirichlet prior is introduced, $\pi$ could be treated as a latent, with $\alpha$ the replacement parameter, since it is unconstrained. We may then however have to impose a prior on $\alpha$.
 \end{itemize}
 
 
-\label{sec:em-results-paired-down}
-\subsection{EM algorithm for the paired-down mixture model}
+\label{sec:em-results-pared-down}
+\subsection{EM algorithm for the pared-down mixture model}
 
-In this section we present the rersults necessary to implement EM for the paired down Gaussian mixture model of Section \ref{sec:paired-down-gmm}. For details, see Section \ref{sec:em-paired-down-derive}. The results of the E-step are implicit in the formulation of the objective function, but we will use the following constants that arise during the E-step:
+In this section we present the results necessary to implement EM for the pared down Gaussian mixture model of Section \ref{sec:pared-down-gmm}. For details, see Section \ref{sec:em-pared-down-derive}. The results of the E-step are implicit in the formulation of the objective function, but we will use the following constants that arise during the E-step:
 \begin{align}
     \Sigma_{z, t}^* &= R^* \pn{R^* + Q^*_{z}}\inv Q_{z} \\
     \mu_{z, t}^* &= \Sigma_{z, t}^* \pn{ {R^*}\inv y_t + {Q^*_z}\inv m_{z} } \\
@@ -155,19 +155,19 @@ Subject to this constraint, proceed by gradient ascent on the function
 
 
 
-\label{sec:em-paired-down-derive}
-\section{Derivaiton of EM for the paired-down mixture model}
+\label{sec:em-pared-down-derive}
+\section{Derivation of EM for the pared-down mixture model}
 
-In this section we expand upon parameter inference procedure outlined in Section \ref{sec:em-general} for the paired down Gaussian mixture model of \ref{sec:em-results-paired-down}.
+In this section we expand upon parameter inference procedure outlined in Section \ref{sec:em-general} for the pared down Gaussian mixture model of \ref{sec:em-results-pared-down}.
 
-\textbf{E step:}\ \ In the ``expectation'' step, we begin from Equation \ref{eq:general-qt} to derive the auxilliary distribution $q_t(x, z)$. The first action will be to remove unneccesary conditional terms and apply the assumed distributions of the model:
+\textbf{E step:}\ \ In the ``expectation'' step, we begin from Equation \ref{eq:general-qt} to derive the auxiliary distribution $q_t(x, z)$. The first action will be to remove unnecessary conditional terms and apply the assumed distributions of the model:
 \begin{align}
-    \label{eq:latent-posterior-bayes-paired-down}
+    \label{eq:latent-posterior-bayes-pared-down}
     q_t(x, z) &= P(y_t \mid x, z, \theta^*)P(x, z \mid \theta^*) \\
     &= P(y_t \mid x, R^*) P(x \mid m^*_{z}, Q^*_{z}) P(z \mid \pi^*) \\
     &= \NN(y_t \mid x, R^*)\, \NN(x \mid m^*_{z}, Q^*_{z})\, \pi_{z}^*
 \end{align}
-We now move to write the functional form we will use for our auxilliary distribution $q$, which should be an unnormalized distribution equal to the numerator of equation \ref{eq:latent-posterior-bayes}. In general, the product of normals PDFs is proportional to another normal PDF (we will show why the proportionality constant is $P(y_t | z_t, \theta^*)$ momentarily),
+We now move to write the functional form we will use for our auxiliary distribution $q$, which should be an unnormalized distribution equal to the numerator of equation \ref{eq:latent-posterior-bayes}. In general, the product of normal PDFs is proportional to another normal PDF (we will show why the proportionality constant is $P(y_t | z_t, \theta^*)$ momentarily),
 \begin{align}
     q_t(x, z) &= \pi_{z}^*\, P(y_t | z, \theta^*)\, \NN(x \mid \mu^*_{z, t}, \Sigma^*_{z, t}) \\
     \Sigma_{z, t}^* &= R^* \pn{R^* + Q^*_{z}}\inv Q_{z} \label{eq:sigma-star} \\
@@ -193,24 +193,24 @@ In computations, it will be useful to have a more explicit form of this proporti
 \end{align}
 which we derive in an abstract setting to simplify notation:
 \begin{proposition}
-    The product normal PDFs evaluated at a point, $N_a = \NN(x\mid a, A)$ and $N_b = \NN(x\mid b, B)$, is proportional to $N_c = \NN(x\mid c, C)$ with and $C = A\pn{A + B}\inv B$ and $c = CA\inv a + CB\inv b$. Moreover if $Z_\Sigma = \pn{2\pi}^{-D/2}\abs{\Sigma}^{-1/2}$ is the usual Gaussian normalization factor for covariance matrix $\Sigma$, then equiality is achieved using the following proportionality constant:
+    The product normal PDFs evaluated at a point, $N_a = \NN(x\mid a, A)$ and $N_b = \NN(x\mid b, B)$, is proportional to $N_c = \NN(x\mid c, C)$ with and $C = A\pn{A + B}\inv B$ and $c = CA\inv a + CB\inv b$. Moreover, if $Z_\Sigma = \pn{2\pi}^{-D/2}\abs{\Sigma}^{-1/2}$ is the usual Gaussian normalization factor for covariance matrix $\Sigma$, then equality is achieved using the following proportionality constant:
     \begin{align}
         N_a N_b = \frac{Z_aZ_b}{Z_c} \exp\cb{-\frac{1}{2}\pn{a^TA\inv a \,+\, b^TB\inv b \,-\, c^T C\inv c}} N_c.
     \end{align}
 \end{proposition}
 \begin{proof}
-The proportionality result is standard, so we leave that proof to the reader and use the result to derive our proportionality constant. Let $E_i$ be the exponent in the normal pdf $N_i$, namely $E_a = (x - a)^TA\inv (x - a)$. Then the exponents of $N_aN_b$, $E_a + E_b$, and the exponent of $N_c$, $E_c$ only differ in those terms which are constant in $x$, i.e., 
+The proportionality result is standard, so we leave that proof to the reader and use the result to derive our proportionality constant. Let $E_i$ be the exponent in the normal PDF $N_i$, namely $E_a = (x - a)^TA\inv (x - a)$. Then the exponents of $N_aN_b$, $E_a + E_b$, and the exponent of $N_c$, $E_c$ only differ in those terms which are constant in $x$, i.e., 
 \begin{align}
     \pn{E_a + E_b} - E_c = a^TA\inv a + b^TB\inv b + c^T C\inv c
 \end{align}
 Finally using the Gaussian PDF normalization constant $Z_\Sigma = \pn{2\pi}^{-D/2}\abs{\Sigma}^{-1/2}$, we can write the constant $K$ such that $N_aN_b = K N_c$ as $\frac{Z_aZ_b}{Z_c} \exp\cb{-\frac{1}{2}\pn{E_a + E_b - E_c}}$.
 \end{proof}
 
-\textbf{M step:}\ \ In our ``maximization'' step, we make $A(\theta, \theta^*)$ numerically computable to enable gradient ascent optimization. In particular we must evaluate the integral w.r.t. $x$ that appears in Equation \ref{eq:em-int-argmax}. These derivations closely follow the standard ones for expectation maximization of a gaussian mixture model. Expanding the joint probability in equation \ref{eq:em-int-argmax}, we arrive at three terms that to integrate against $q_t$:
+\textbf{M step:}\ \ In our ``maximization'' step, we make $A(\theta, \theta^*)$ numerically computable to enable gradient ascent optimization. In particular, we must evaluate the integral w.r.t. $x$ that appears in Equation \ref{eq:em-int-argmax}. These derivations closely follow the standard ones for expectation maximization of a Gaussian mixture model. Expanding the joint probability in equation \ref{eq:em-int-argmax}, we arrive at three terms that to integrate against $q_t$:
 \begin{align}
     \argmax_{\theta} \sum_{t}\sum_{z}\int_{x} q_t(x, z) \bc{ \log P(y_t \mid x, R) + \log P(x \mid m_{z}, Q_{z}) + \log P(z \mid \pi)}
 \end{align}
-Note that we may optimize many of the parameters separately, since each $\log P$ is constant in all but a few of them. In particular we may find an analytical optimum for $\pi$, which requires constrained optimization, and then continue with our numerical optimization procedure for other variables, meaning that we do not need to evaluate the integral on the third term.
+Note that we may optimize many of the parameters separately, since each $\log P$ is constant in all but a few of them. In particular, we may find an analytical optimum for $\pi$, which requires constrained optimization, and then continue with our numerical optimization procedure for other variables, meaning that we do not need to evaluate the integral on the third term.
 
 \textit{Integration against $\log P(y_t \mid x, R)$.}\ \ We aim to evaluate $\int_x q_t(x, z) \log P(y_t \mid x, R)$ for a given $z,t$. By applying the model assumption that $y_t$ is normally distributed with parameters $x, R$, the log probability may be expanded as:
 \begin{align}
@@ -239,7 +239,7 @@ The proof is left to the reader, but is achieved by wrapping the whole expectati
     \int_x q_t(x, z) P(x \mid m_{z}, Q_{z}) = -\frac{1}{2}\pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \log \abs{Q_z} + \NN(\mu_{z,t}^* \mid m_z, Q_z) + \Tr\bc{\Sigma_{z,t}^* Q_z\inv} }
 \end{align}
 
-\textit{Optimum in $\pi$.}\ \ The mixture weights parameter is subject to the constraint $\sum_z \pi_z = 1$, and the form of its optimum will be similar across models, so we pursue analytical optimization for this parameter. To do so, we introduce a lagrangian $L = A + \lambda \pn{1 - \sum\pi}$. For each weight $\pi_k$, terms $z\neq k$ in the sum over $z$ of Equation \ref{eq:em-int-argmax} are constant
+\textit{Optimum in $\pi$.}\ \ The mixture weights parameter is subject to the constraint $\sum_z \pi_z = 1$, and the form of its optimum will be similar across models, so we pursue analytical optimization for this parameter. To do so, we introduce a Lagrangian $L = A + \lambda \pn{1 - \sum\pi}$. For each weight $\pi_k$, terms $z\neq k$ in the sum over $z$ of Equation \ref{eq:em-int-argmax} are constant
 \begin{align}
     \frac{\pd L}{\pd \pi_k}
     &= -\lambda + \frac{\pd }{\pd \pi_k} \sum_{t}\sum_z\int_{x}  q_t(z, k) \log P(z \mid \pi)\\
@@ -247,14 +247,14 @@ The proof is left to the reader, but is achieved by wrapping the whole expectati
     &= -\lambda + \pi_{k}^* \sum_t P(y_t | k, \theta^*) \int_x \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})\frac{1}{\pi_k} \\
     &= -\lambda + \pi_{k}^* \sum_t P(y_t | k, \theta^*) \bigg/ \pi_k. \\
 \end{align}
-Solving for zeros of this partial derivative yields $\pi_k = \pi_{k}^* \sum_t P(y_t | k, \theta^*) / \lambda$, and using the constraint $\sum\pi = 1$ it is clear that $\lambda$ must be a normalization constant. Therefore we arrive at the optima for $\pi_k$:
+Solving for zeros of this partial derivative yields $\pi_k = \pi_{k}^* \sum_t P(y_t | k, \theta^*) / \lambda$, and using the constraint $\sum\pi = 1$ it is clear that $\lambda$ must be a normalization constant. Therefore, we arrive at the optima for $\pi_k$:
 \begin{align}
     \label{eq:pi-anlt-opt}
     {\pi^*_k}_{\text{new}} = \frac{\pi_{k}^* \sum_t P(y_t | k, \theta^*)}{\sum_{z} \pi_{z}^* \sum_t P(y_t | z, \theta^*)}.
 \end{align}
 
 \label{full-model-derivation}
-\section{Optmizing the mixture of linear Gaussians}
+\section{Optimizing the mixture of linear Gaussians}
 
 We assume the following generative model:
 \begin{align}
@@ -266,7 +266,7 @@ We assume the following generative model:
     d^i, F^i \sim \text{Matrix-Normal}   
 \end{align}
 %
-where $i$ indexes animals, $t$ indexes frames, $x_t^i, y_t^i \in \mathbb{R}^{KD}$, $z_t^i \in \{1,...,N\}$, and $\sigma^2 \in \mathbb{R}^+$ is fixed. The parameters can be optimized using variation mean field EM, in which the posterior over latent variables is approximated by the product of factors $q(z_t^i), q(x_t^i)$. During the M-step, we find the parameters $\theta = (m, Q, d, F, \pi)$  that maximize $\mathbb{E}_{q(x,z)} \log P(y,x,z | \theta)$, where $q(x,z) = \prod_{t,i} q(z_t^i) q(x_t^i)$. During the E-step, we iteratively updating the factors $q(z_t^i), q(x_t^i)$ using coordinate ascent, with one or more passes through the data per iteration. The updates are given by:
+where $i$ indexes animals, $t$ indexes frames, $x_t^i, y_t^i \in \mathbb{R}^{KD}$, $z_t^i \in \{1,...,N\}$, and $\sigma^2 \in \mathbb{R}^+$ is fixed. The parameters can be optimized using variation mean field EM, in which the posterior over latent variables is approximated by the product of factors $q(z_t^i), q(x_t^i)$. During the M-step, we find the parameters $\theta = (m, Q, d, F, \pi)$  that maximize $\mathbb{E}_{q(x,z)} \log P(y,x,z | \theta)$, where $q(x,z) = \prod_{t,i} q(z_t^i) q(x_t^i)$. During the E-step, we iteratively update the factors $q(z_t^i), q(x_t^i)$ using coordinate ascent, with one or more passes through the data per iteration. The updates are given by:
 \begin{align}
 \log q^*(z_t^i) & = \mathbb{E}_{q(x_t^i)} \log P(y_t^i, x_t^i, z_t^i | \theta) + \text{const.} \\
 & = \int_{x_t^i} \mathcal{N}(x_t^i \mid \mu, \Sigma) \log \mathcal{N}(x_t^i \mid m_{z_t^i}, Q_{z_t^i}) + \log \pi^i_{z_t^i} + \text{const.} \\
