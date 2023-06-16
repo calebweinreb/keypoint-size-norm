@@ -73,8 +73,9 @@ where $F, F'$ are respective functions mapping from the latent space to each ani
 
 A core simplifying assumption of all of our pose space models $P_z$ will be independence at each time step. In this way our model is a deepening of keypoint-moseq's affine transform from pose space to keypoint space $y \sim \NN(Cx+d, R)$, where we vary the transform per-mouse and investigate other transforms, while ignoring all dynamical character of behavior. 
 
-\label{sec:pared-down-gmm}
+
 \subsection{Pared-down Gaussian mixture model}
+\label{sec:pared-down-gmm}
 
 Before deriving EM steps for our full desired context, we begin with a pared-down model for only one animal, where we take $F = \mathrm{Id}$ and $R = \eps I$
 \begin{align}
@@ -90,8 +91,9 @@ A couple of notes:
 Treating $z_t, x_t$ as latent variables, $\theta = (\pi, m_k, Q_k)$ as a parameter vector, and $\eps$ as a hyperparameter, this model can be fit using expectation maximization, as described in Section \ref{sec:em-general}
 
 
-\label{sec:em-general}
+
 \subsection{Expectation maximization}
+\label{sec:em-general}
 
 In expectation maximization, jointly optimize the log likelihood $\ell(\theta)$ of a set of model parameters $\theta$ given observations $y$. In particular, we do so while taking the expectation over unknown values of some latent variables --- $z$ and $x$ in our case --- according to an auxiliary distribution $q(x, z | y, \theta^*) \propto P(x, z | y, \theta^*)$ for a current parameter estimate $\theta^*$. The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that taking this expectation produces a lower bound for the likelihood $\ell(\theta)$, namely
 \begin{align}
@@ -130,8 +132,8 @@ There are a couple of considerations also for how we will treat $\pi$, due to th
 \end{itemize}
 
 
-\label{sec:em-results-pared-down}
 \subsection{EM algorithm for the pared-down mixture model}
+\label{sec:em-results-pared-down}
 
 In this section we present the results necessary to implement EM for the pared down Gaussian mixture model of Section \ref{sec:pared-down-gmm}. For details, see Section \ref{sec:em-pared-down-derive}. The results of the E-step are implicit in the formulation of the objective function, but we will use the following constants that arise during the E-step:
 \begin{align}
@@ -155,8 +157,9 @@ Subject to this constraint, proceed by gradient ascent on the function
 
 
 
-\label{sec:em-pared-down-derive}
+
 \section{Derivation of EM for the pared-down mixture model}
+\label{sec:em-pared-down-derive}
 
 In this section we expand upon parameter inference procedure outlined in Section \ref{sec:em-general} for the pared down Gaussian mixture model of \ref{sec:em-results-pared-down}.
 
