@@ -87,6 +87,7 @@ A couple of notes:
 \begin{itemize}
     \item Until we migrate to a Bayesian formulation, we do not have parameter priors like those specified in keypoint-moseq or in Section \ref{full-model-derivation}. The EM updates will be simpler to work with, so we're starting in this prior-less regime. We can then derive updates incorporating priors as in Scott Linderman's Stats 305C lecture notes (\href{https://github.com/slinderman/stats305c/blob/spring2023/slides/lecture08-em.pdf}{github}) or Murphy 11.4.2.8 [cite]
     \item Because of the symmetry between $\eps$ and $Q_k$, will fix $\eps$ and treat it as a hyperparameter. Once the morph functions are not identity, we will impose separate priors on uniform keypoint error $R$ and the scale factors of animals, which will break this symmetry. For forward-compatibility, we will work without the assumption $R = \eps I$, however in implementing this model the parameter will be fixed.
+    \item In practice, we will reparameterize the model to avoid constrained optimization by taking the mixture weights $\pi$ to be the softmax of an unconstrained cluster weight vector $\bar\pi$.
 \end{itemize}
 Treating $z_t, x_t$ as latent variables, $\theta = (\pi, m_k, Q_k)$ as a parameter vector, and $\eps$ as a hyperparameter, this model can be fit using expectation maximization, as described in Section \ref{sec:em-general}
 
@@ -142,16 +143,14 @@ In this section we present the results necessary to implement EM for the pared d
     P(y_t | z, \theta^*) =& \bc{\pn{2\pi}^{-D} \pn{\abs{R^*} \abs{Q_z^*}}\inv \abs{ \Sigma^*_{z, t}}}^{1/2} \times \\
      & \exp\cb{-\frac{1}{2}\pn{y_t^T{R^*}\inv y_t \;+\; {m_z^*}^T{Q_z^*}\inv {m_z^*} \;-\; {\mu_{z, t}^*}^T {\Sigma_{z, t}^*}\inv {\mu_{z, t}^*}}}
 \end{align}
-which arise as Equations \ref{eq:sigma-star}, \ref{eq:mu-star}, and \ref{eq:y-marg-post} respectively in the derivation. We optimize $A$ with $\pi$ fixed to its analytical optimum (Equation \ref{eq:pi-anlt-opt})
+which arise as Equations \ref{eq:sigma-star}, \ref{eq:mu-star}, and \ref{eq:y-marg-post} respectively in the derivation. We then proceed in the M-step to numerically maximize the objective function
 \begin{align}
-    {\pi^*_k}_{\text{new}} = \frac{\pi_{k}^* \sum_t P(y_t | k, \theta^*)}{\sum_{z} \pi_{z}^* \sum_t P(y_t | z, \theta^*)}.
-\end{align}
-Subject to this constraint, proceed by gradient ascent on the function
-\begin{align}
-    J(\theta) = \sum_t\sum_z -\frac{\pi_z^*\,P(y_t\mid z)}{2} \bigg( 
+    J(\theta) = -\sum_t\sum_z \frac{\pi_z^*\,P(y_t\mid z)}{2} \bigg( 
       & \log\abs{R} + \NN(\mu_{z,t}^* \mid y_t, R) + \Tr\bc{\Sigma_{z, t}^* R\inv} \\
-    + & \log\abs{Q_z} + \NN(\mu_{z,t}^* \mid m_z, Q_z) + \Tr\bc{\Sigma_{z, t}^* Q_z\inv} \bigg)
+    + & \log\abs{Q_z} + \NN(\mu_{z,t}^* \mid m_z, Q_z) + \Tr\bc{\Sigma_{z, t}^* Q_z\inv} \\
+    - &\, 2\bar\pi_k + 2\log\sum \bar\pi \bigg)
 \end{align}
+whose terms are derived in Equations \ref{eq:obj-term-1}, \ref{eq:obj-term-2}, and \ref{eq:obj-term-3}.
 
 
 
@@ -235,25 +234,19 @@ The expectation of a quadratic form in a normal variable is the sum of a normal 
 The proof is left to the reader, but is achieved by wrapping the whole expectation in a trace and cycling its arguments to arrive at an outer product $(x - c)(x - c)^T$. Combining the observations above, we arrive at 
 \begin{align}
     \int_x q_t(x, z) \log P(y_t \mid x, R) = -\frac{1}{2}\pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \log \abs{R} + \NN(\mu_{z,t}^* \mid y_t, R) + \Tr\bc{\Sigma_{z,t}^* R\inv} }
+    \label{eq:obj-term-1}
 \end{align}
 
 \textit{Integration against $\log P(x \mid m_{z}, Q_{z})$.}\ \ Next we calculate $\int_x q_t(x, z) \log P(x \mid m_{z}, Q_{z})$ for a given $z,t$. The procedure is the same as for $P(y_t \mid x, R)$ but for a normal with parameters $m_{z}, Q_{z}$, and results in:
 \begin{align}
     \int_x q_t(x, z) P(x \mid m_{z}, Q_{z}) = -\frac{1}{2}\pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \log \abs{Q_z} + \NN(\mu_{z,t}^* \mid m_z, Q_z) + \Tr\bc{\Sigma_{z,t}^* Q_z\inv} }
+    \label{eq:obj-term-2}
 \end{align}
 
-\textit{Optimum in $\pi$.}\ \ The mixture weights parameter is subject to the constraint $\sum_z \pi_z = 1$, and the form of its optimum will be similar across models, so we pursue analytical optimization for this parameter. To do so, we introduce a Lagrangian $L = A + \lambda \pn{1 - \sum\pi}$. For each weight $\pi_k$, terms $z\neq k$ in the sum over $z$ of Equation \ref{eq:em-int-argmax} are constant
+\textit{Integration against $\log P(z \mid \pi$.}\ \ Finally, we calculate $\int_x q_t(x, z) \log P(z \mid \pi)$ for a given $z, t$. Because the log probability does not depend on $x$, the integral marginalizes the normal PDF in $q_t(x, x)$, and we arrive at $\pi_{z}^*\, P(y_t | z, \theta^*) \, \log \pi_k$. Substituting then the logits vector $\bar\pi$ results in the form amenable to unconstrained optimization:
 \begin{align}
-    \frac{\pd L}{\pd \pi_k}
-    &= -\lambda + \frac{\pd }{\pd \pi_k} \sum_{t}\sum_z\int_{x}  q_t(z, k) \log P(z \mid \pi)\\
-    &= -\lambda + \sum_{t}\int_{x}  q_t(x, k) \frac{\pd }{\pd \pi_k} \log \pi_{k} \\
-    &= -\lambda + \pi_{k}^* \sum_t P(y_t | k, \theta^*) \int_x \NN(x \mid \mu^*_{k, t}, \Sigma^*_{k, t})\frac{1}{\pi_k} \\
-    &= -\lambda + \pi_{k}^* \sum_t P(y_t | k, \theta^*) \bigg/ \pi_k. \\
-\end{align}
-Solving for zeros of this partial derivative yields $\pi_k = \pi_{k}^* \sum_t P(y_t | k, \theta^*) / \lambda$, and using the constraint $\sum\pi = 1$ it is clear that $\lambda$ must be a normalization constant. Therefore, we arrive at the optima for $\pi_k$:
-\begin{align}
-    \label{eq:pi-anlt-opt}
-    {\pi^*_k}_{\text{new}} = \frac{\pi_{k}^* \sum_t P(y_t | k, \theta^*)}{\sum_{z} \pi_{z}^* \sum_t P(y_t | z, \theta^*)}.
+    \int_x q_t(x, z) \log P(z \mid \pi) = \pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \bar\pi_k - \log\sum_i \bar\pi_i }
+    \label{eq:obj-term-3}
 \end{align}
 
 \label{full-model-derivation}
