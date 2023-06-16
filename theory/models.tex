@@ -125,12 +125,6 @@ Rewriting Eq. \ref{eq:em-argmax} using timepoint independence and expanding the 
     \theta^*_{\text{new}} := \argmax_{\theta} \sum_t \sum_{z} \int q_t(x, z)\, \log P(y_t, x, z | \theta) \; dx \label{eq:em-int-argmax}
 \end{align}
 The main requirement to enable numerical computation and differentiation of $\theta^*_{\text{new}}$ will be to evaluate the integral in $x$. 
-There are a couple of considerations also for how we will treat $\pi$, due to the constraint $\sum \pi = 1$:
-\begin{itemize}
-    \item We can work where possible to arrive at analytical optima for $\pi$. The results should be similar across models, always corresponding to the vanilla GMM result ${\pi_k}_{\text{new}} = \frac{1}{N}\sum_t q_t(k)$. However, it is not clear what will happen when priors are introduced. \textbf{We will begin with this approach.}
-    \item The model could be reformulated with $\pi = \bar{\pi} / \sum\bar{\pi}$, though standard formulas for working with priors may need to be updated accordingly.
-    \item Once a Dirichlet prior is introduced, $\pi$ could be treated as a latent, with $\alpha$ the replacement parameter, since it is unconstrained. We may then however have to impose a prior on $\alpha$.
-\end{itemize}
 
 
 \subsection{EM algorithm for the pared-down mixture model}
