@@ -118,6 +118,8 @@ Our first move in calculating $q_t$ will be to apply Bayes' rule and drop the de
 \end{align}
 We will then aim to compute this expression for $q_t$ analytically for each model.
 
+\textbf{NOTE:}\quad We \textit{cannot} drop the normalizing factor $P(y_t\mid \theta^*)$, since it weights terms in the sum over $t$. This error is fixed in the \texttt{SingleMouseGMM} code as of this commit.
+
 \textbf{M step:}\ \ For simple models, maximization of $A$ can be achieved analytically as well, but in general to improve model iteration speed we will handle the M-step using gradient ascent methods. The goal of our M-steps in this document will therefore be to calculate functional forms of $A$ that are compatible with numerical optimization packages.
 
 Rewriting Eq. \ref{eq:em-argmax} using timepoint independence and expanding the expectation from Eq. \ref{eq:em-argmax}, we arrive at the formula that will be the basis for deriving each model's M-step.
@@ -134,15 +136,15 @@ In this section we present the results necessary to implement EM for the pared d
 \begin{align}
     \Sigma_{z, t}^* &= R^* \pn{R^* + Q^*_{z}}\inv Q_{z} \\
     \mu_{z, t}^* &= \Sigma_{z, t}^* \pn{ {R^*}\inv y_t + {Q^*_z}\inv m_{z} } \\
-    P(y_t | z, \theta^*) =& \bc{\pn{2\pi}^{-D} \pn{\abs{R^*} \abs{Q_z^*}}\inv \abs{ \Sigma^*_{z, t}}}^{1/2} \times \\
+    P(y_t | z, \theta^*) =& \bc{\pn{2\pi}^{-M} \pn{\abs{R^*} \abs{Q_z^*}}\inv \abs{ \Sigma^*_{z, t}}}^{1/2} \times \\
      & \exp\cb{-\frac{1}{2}\pn{y_t^T{R^*}\inv y_t \;+\; {m_z^*}^T{Q_z^*}\inv {m_z^*} \;-\; {\mu_{z, t}^*}^T {\Sigma_{z, t}^*}\inv {\mu_{z, t}^*}}}
 \end{align}
 which arise as Equations \ref{eq:sigma-star}, \ref{eq:mu-star}, and \ref{eq:y-marg-post} respectively in the derivation. We then proceed in the M-step to numerically maximize the objective function
 \begin{align}
     J(\theta) = -\sum_t\sum_z \frac{\pi_z^*\,P(y_t\mid z)}{2} \bigg( 
-      & \log\abs{R} + \NN(\mu_{z,t}^* \mid y_t, R) + \Tr\bc{\Sigma_{z, t}^* R\inv} \\
-    + & \log\abs{Q_z} + \NN(\mu_{z,t}^* \mid m_z, Q_z) + \Tr\bc{\Sigma_{z, t}^* Q_z\inv} \\
-    - &\, 2\bar\pi_k + 2\log\sum \bar\pi \bigg)
+      & \log\abs{R} + d^2_M(\mu_{z,t}^* , y_t ;\, R) + \Tr\bc{\Sigma_{z, t}^* R\inv} \\
+    + & \log\abs{Q_z} + d^2_M(\mu_{z,t}^* , m_z ;\, Q_z) + \Tr\bc{\Sigma_{z, t}^* Q_z\inv} \\
+    - &\, 2\bar\pi_k + 2\log\sum e^{\bar\pi} \bigg) \label{eqn:objective}
 \end{align}
 whose terms are derived in Equations \ref{eq:obj-term-1}, \ref{eq:obj-term-2}, and \ref{eq:obj-term-3}.
 
@@ -184,7 +186,7 @@ To understand where our proportionality constant $P(y_t | z, \theta^*)$ arises f
 In computations, it will be useful to have a more explicit form of this proportionality constant,
 \begin{align}
     \label{eq:y-marg-post}
-    P(y_t | z, \theta^*) =& \bc{\pn{2\pi}^{-D} \pn{\abs{R^*} \abs{Q_z^*}}\inv \abs{ \Sigma^*_{z, t}}}^{1/2} \times \\
+    P(y_t | z, \theta^*) =& \bc{\pn{2\pi}^{-M} \pn{\abs{R^*} \abs{Q_z^*}}\inv \abs{ \Sigma^*_{z, t}}}^{1/2} \times \\
      & \exp\cb{-\frac{1}{2}\pn{y_t^T{R^*}\inv y_t \;+\; {m_z^*}^T{Q_z^*}\inv {m_z^*} \;-\; {\mu_{z, t}^*}^T {\Sigma_{z, t}^*}\inv {\mu_{z, t}^*}}}
 \end{align}
 which we derive in an abstract setting to simplify notation:
@@ -218,30 +220,50 @@ Note that we may optimize many of the parameters separately, since each $\log P$
 The first term (Eq. \ref{eq:const-theta-drop-1}) is constant in $\theta$ and therefore may be dropped. The second (Eq. \ref{eq:marginalize-drop-1}) is constant in $x$, so integration against a normal PDF in $x$ is identity. For the third term (Eq. \ref{eq:gauss-quad-expect-1}), we apply a general formula for integration of a quadratic form against a normal PDF:
 
 \begin{proposition}
-The expectation of a quadratic form in a normal variable is the sum of a normal PDF and a trace:
+The expectation of a quadratic form in a normal variable is the sum of a Mahalanobis distance and a trace:
 \begin{align}
-    \EE_{x\sim\NN(a, B)} \bc{(x - c)^T D\inv (x - c)} = \NN(a \mid c, D) + \Tr\bc{BD\inv}
+    \EE_{x\sim\NN(a, B)} \bc{(x - c)^T D\inv (x - c)} = d^2_M(a, c;\, D\inv) + \Tr\bc{BD\inv}
 \end{align}
 \label{prop:norm-quad-expect}
 \end{proposition}
 
 The proof is left to the reader, but is achieved by wrapping the whole expectation in a trace and cycling its arguments to arrive at an outer product $(x - c)(x - c)^T$. Combining the observations above, we arrive at 
 \begin{align}
-    \int_x q_t(x, z) \log P(y_t \mid x, R) = -\frac{1}{2}\pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \log \abs{R} + \NN(\mu_{z,t}^* \mid y_t, R) + \Tr\bc{\Sigma_{z,t}^* R\inv} }
+    \int_x q_t(x, z) \log P(y_t \mid x, R) = -\frac{1}{2}\pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \log \abs{R} + d^2_M(\mu_{z,t}^*, y_t;\, R) + \Tr\bc{\Sigma_{z,t}^* R\inv} }
     \label{eq:obj-term-1}
 \end{align}
 
 \textit{Integration against $\log P(x \mid m_{z}, Q_{z})$.}\ \ Next we calculate $\int_x q_t(x, z) \log P(x \mid m_{z}, Q_{z})$ for a given $z,t$. The procedure is the same as for $P(y_t \mid x, R)$ but for a normal with parameters $m_{z}, Q_{z}$, and results in:
 \begin{align}
-    \int_x q_t(x, z) P(x \mid m_{z}, Q_{z}) = -\frac{1}{2}\pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \log \abs{Q_z} + \NN(\mu_{z,t}^* \mid m_z, Q_z) + \Tr\bc{\Sigma_{z,t}^* Q_z\inv} }
+    \int_x q_t(x, z) P(x \mid m_{z}, Q_{z}) = -\frac{1}{2}\pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \log \abs{Q_z} + d^2_M(\mu_{z,t}^*, m_z;\, Q_z) + \Tr\bc{\Sigma_{z,t}^* Q_z\inv} }
     \label{eq:obj-term-2}
 \end{align}
 
 \textit{Integration against $\log P(z \mid \pi$.}\ \ Finally, we calculate $\int_x q_t(x, z) \log P(z \mid \pi)$ for a given $z, t$. Because the log probability does not depend on $x$, the integral marginalizes the normal PDF in $q_t(x, x)$, and we arrive at $\pi_{z}^*\, P(y_t | z, \theta^*) \, \log \pi_k$. Substituting then the logits vector $\bar\pi$ results in the form amenable to unconstrained optimization:
 \begin{align}
-    \int_x q_t(x, z) \log P(z \mid \pi) = \pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \bar\pi_k - \log\sum_i \bar\pi_i }
+    \int_x q_t(x, z) \log P(z \mid \pi) = \pi_{z}^*\, P(y_t | z, \theta^*) \pn{ \bar\pi_k - \log\sum_i e^{\bar\pi_i} }
     \label{eq:obj-term-3}
 \end{align}
+
+\subsection{Zero-noise limit in a single mixture component}
+
+\textbf{NOTE:}\quad This section uses a $q_t(x, z)$ that includes the normalizing factor $P(y_t\mid \theta^*)$, combined with conditional terms from the application of Bayes' rule to result the normalizer $P(z\mid y_t, \theta^*)$. This normalizer will be further detailed in a future commit.
+
+For debugging, we seek a simple and highly interpretable case, to which end we explore the $\eps\rightarrow 0$ case with $N=1$. Here,
+\begin{align}
+    \Sigma_{z, t}^* &= R^* \pn{R^* + Q^*_{z}}\inv Q_{z} \rightarrow \mathbf{0} \\
+    \mu_{z, t}^* &= \Sigma_{z, t}^* \pn{ {R^*}\inv y_t + {Q^*_z}\inv m_{z} } \\
+    &= Q_z^* (R^* + Q_z^*)\inv y_t + R_z^* (R^* + Q_z^*)\inv m_z^* \rightarrow y_t \\
+    q_t(x, z) &= P(z\mid y_t,\theta^*)\,\NN(x;\, \mu^*_{z,t}, \Sigma^*_z) \rightarrow \pi_z^* P(z\mid y_t,\theta^*)\,\delta_{y_t}(x)
+\end{align}
+We are then able to recapitulate the objective function \ref{eqn:objective} up to the $P(y_t \mid x, R)$ term, which we drop here for ease since it is both infinite and fixed in the optimized variables, and $\log2\pi$ which is constant. Note that $\Tr\bc{\Sigma_z^*Q_z\inv}$ does not appear since $\Sigma_z^* \rightarrow \mathbf{0}$.
+\begin{align}
+    &\argmax_\theta A(\theta, \theta^*) = \sum_{z, t} \int_x q_t(x, z)\log P(y_t, x, z | \theta) \\
+    &= \sum_{z, t} \int_x \delta_{y_t}(x) P(z\mid y_t,\theta^*) \big[\log P(y_t \mid x, R) + \log P(x \mid m_z, Q_z) + \log P(z\mid \theta) \big] \\
+    &= \sum_{z, t} P(z\mid y_t,\theta^*) \bc{\log \NN(y_t \mid m_z, Q_z) + \log \pi_z} \\
+    &= \sum_{z, t} P(z\mid y_t,\theta^*) \bc{-\frac{1}{2}\log \abs{Q_z} - \frac{1}{2}d^2_M(y_t , m_z ;\, Q_z) + \log \pi_z}
+\end{align}
+
 
 \label{full-model-derivation}
 \section{Optimizing the mixture of linear Gaussians}
