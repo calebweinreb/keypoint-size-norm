@@ -126,50 +126,68 @@ def dirichlet_blocks(
     pal = "Set1",
     ax = None,
     loc = 0,
-    width = 0.3,
-    hline = None,
+    thickness = 0.3,
+    axline = None,
+    orientation = 'vertical',
     **artist_kwargs
     ):
     ret = []
     if isinstance(pal, str): pal = sns.color_palette(pal, n_colors = len(p))
     pts = jnp.concatenate([jnp.array([0]), jnp.cumsum(p)])
     for i, _ in enumerate(pts[:-1]):
+        if orientation == 'vertical':
+            kws = dict(xy = (loc - thickness / 2, pts[i]),
+                       width = thickness, height = p[i])
+        else:
+            kws = dict(xy = (pts[i], loc - thickness / 2),
+                       width = p[i], height = thickness)
         ret.append(Rectangle(
-            xy = (loc - width / 2, pts[i]),
-            width = width, height = p[i],
-            **{**dict(fc = pal[i], lw = 0), **artist_kwargs}
+            **{**dict(fc = pal[i], lw = 0), **artist_kwargs, **kws}
         ))
         if ax is not None:
             ax.add_artist(ret[-1])
-            if hline is not None and i != 0:
-                ax.axhline(pts[i], **hline)
+            if axline is not None and i != 0:
+                if orientation == 'vertical':
+                    ax.axhline(pts[i], **axline)
+                else: 
+                    ax.axvline(pts[i], **axline)
     return ret
 
 
 def compare_dirichlet_blocks(
     p1: Float[Array, "n"],
     p2: Union[Float[Array, "n"], Float[Array, "k n"]],
-    ax, labels, pal = "Set1",
+    ax, labels, pal = "Set1", orientation = 'vertical',
+    label_kwargs = {}
     ):
 
     dirichlet_blocks(
         p1, pal = pal, ax = ax,
-        loc = 0, width = 0.3,
+        loc = 0, thickness = 0.3,
+        orientation = orientation,
         lw = 1, ec = 'w', alpha = 0.5,
         zorder = 1,
-        hline = dict(ls = '--', lw = 0.5, color = '.7', zorder = -1))
+        axline = dict(ls = '--', lw = 0.5, color = '.7', zorder = -1))
     
     if jnp.array(p2).ndim == 1:
         p2 = [p2]
     for i, p in enumerate(p2):
         dirichlet_blocks(
             p, pal = pal, ax = ax,
-            loc = i + 1, width = 0.3,
+            orientation = orientation,
+            loc = i + 1, thickness = 0.3,
             lw = 1, ec = 'w',
             zorder = 1)
     
-    ax.set_xlim(-0.5, len(p2) + 0.5)
-    ax.set_xticks(jnp.arange(len(p2) + 1), labels, rotation = 75)
-    ax.set_yticks([])
+    if orientation == 'vertical':
+        ax.set_xlim(-0.5, len(p2) + 0.5)
+        ax.set_xticks(jnp.arange(len(p2) + 1), labels,
+            **{**dict(rotation = 75), **label_kwargs})
+        ax.set_yticks([])
+    else:
+        ax.set_ylim(-0.5, len(p2) + 0.5)
+        ax.set_yticks(jnp.arange(len(p2) + 1), labels,
+            **{**dict(rotation = 75), **label_kwargs})
+        ax.set_xticks([])
     sns.despine(ax = ax, bottom = True, left = True)
 
