@@ -330,13 +330,26 @@ The final term does not vary in $x$ and therefore does not need to be integrated
 \end{align}
 where the dependence of $C_n$ on $\phi$ is dropped for readability. The result is an unnormalized Gaussian log probability to be integrated against $s(x)$ and a normalizer term that may be computed independent of the morph model. 
 
+\subsection{Double-checking Gaussian linear transform}
+
+\begin{align}
+    \NN(y\mid Ax, B) &= Z_{B} \exp\cb{-\frac{1}{2}\norm{y - Ax}_{B}} \\
+    &= Z_{B} \exp\cb{-\frac{1}{2}(y - Ax)^TB\inv(y - Ax)} \\
+    &= Z_{B} \exp\cb{-\frac{1}{2}(A\inv y - x)^TA^TB\inv A(A\inv y - x)} \\
+    &= Z_{B} \exp\cb{-\frac{1}{2}\norm{A\inv y - x}_{A\inv B{A\inv}^T}} \\
+    &= \frac{Z_{B}}{Z_{A\inv B{A\inv}^T}} \NN\pn{x\mid A\inv y, \; A\inv B{A\inv}^T}
+\end{align}
+
 \section{Morph models}
 
 \subsection{Scalar morph}
 
 Before introducing spatially nonlinear morphs, we begin by working with $C_n(\phi) = e^{\phi_n} I_{KD}$, letting the morph model be parameterized by a vector $\phi \in \RR^N$. Latent pose space dimension cannot compress keypoint space using a scalar morph, so $M = KD$.
 
+
 \section{Pose space models}
+
+
 
 \subsection{Gaussian mixture}
 
@@ -374,8 +387,7 @@ The terms $K_{y^t_n, z, \theta_{C, n}}$ and $s(x;\, y^t_n, z, \theta^*)$ for the
 %          - \norm{\mu_{z}}^2_{\Sigma_{z}} \,\bigg]\Bigg\}
 % \end{align}
 
-It remains to be seen that $s$ can be analytically integrated against the requisite gamut of log probability terms. Since $F$ is normal for this model there is only one required calculation (\textit{this will not remain true once results are adapted to support priors}), which is presented in the following proposition:
-
+It remains to be seen that $s$ can be analytically integrated against the requisite log probability terms: the quadratic form from Eq. \ref{eq:cn-swap} and $\log F$, which is also a quadratic form here. Do calculate these integrals, we will use the following proposition.
 \begin{proposition}
 \label{prop:norm-quad-expect-2}
 The expectation of a quadratic form in a normal variable is the sum of a Mahalanobis distance and a trace:
@@ -383,9 +395,11 @@ The expectation of a quadratic form in a normal variable is the sum of a Mahalan
     \EE_{x\sim\NN(a, B)} \bc{(x - c)^T D\inv (x - c)} = \norm{a - c}^2_D + \Tr\bc{BD\inv}
 \end{align}
 \end{proposition}
-The proof is left to the reader, but is achieved by wrapping the whole expectation in a trace and cycling its arguments to arrive at an outer product $(x - c)(x - c)^T$.
-
-
+The proof is left to the reader, but is achieved by wrapping the whole expectation in a trace and cycling its arguments to arrive at an outer product $(x - c)(x - c)^T$. We may now enumerate the log probability terms that are to be calculated by the Gaussian mixture pose space model:
+\begin{itemize}
+    \item The expectation in $s$ of the quadratic form from Eq. \ref{eq:cn-swap} is given by the proposition, scaled by $-\frac{1}{2}$
+    \item The expectation in $s$ of $\log F$ splits into two terms. First, we have the expectation of the quadratic form $-\frac{1}{2}\norm{x - m_z}^2_{Q_z}$, which is again given by the scaled result of the composition. Additionally, there is a term $\log Z_{Q_z} = -\frac{1}{2}\log\abs{Q_z}$ which is constant in $x$ and so is its own expectation.
+\end{itemize}
 
 \label{full-model-derivation}
 \section{Optimizing the mixture of linear Gaussians}

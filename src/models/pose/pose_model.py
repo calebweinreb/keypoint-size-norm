@@ -3,6 +3,8 @@ from jaxtyping import Array, Float, Integer, Scalar
 import jax.numpy as jnp
 import jax
 
+from ...util.computations import unstack
+
 
 class PoseSpaceParameters(Protocol): pass
 
@@ -62,10 +64,7 @@ class Observations(NamedTuple):
         Returns:
             arrs: Arrays (Na..., T, Nb...) for each subject.
         """
-        if N is None: N = self.subject_ids.max() + 1
-        return tuple(
-            jnp.take(arr, jnp.where(self.subject_ids == i)[0], axis = axis)
-            for i in range(N))
+        return unstack(arr, self.subject_ids, N = N, axis = axis)
         
 
 

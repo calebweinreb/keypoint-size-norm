@@ -18,17 +18,23 @@ def ellipse_from_cov(
         fill = False
     ), **artist_kwargs}
 
-    eig = jnp.linalg.eigvals(A).real
+    
+    a = A[0, 0]; b = A[0, 1]; c = A[1, 1]
+    eig = [
+        (a + c) / 2 + jnp.sqrt((a - c) ** 2 / 4 + b ** 2),
+        (a + c) / 2 - jnp.sqrt((a - c) ** 2 / 4 + b ** 2)
+    ]
     if A[0, 1] == 0:
         if A[0, 0] > A[1, 1]: theta = 0
         else: theta = jnp.pi/2
-    else: theta = jnp.arctan2(eig[0] - A[0, 0], A[1, 1])
+    else: theta = jnp.arctan2(eig[0] - A[0, 0], A[0, 1])
+
     
     return Ellipse(
         xy = (x[0], x[1]),
-        width = jnp.sqrt(eig[0]),
-        height = jnp.sqrt(eig[1]),
-        angle = theta,
+        width = jnp.sqrt(eig[0]) * 2,
+        height = jnp.sqrt(eig[1]) * 2,
+        angle = 180 / jnp.pi * theta,
         **artist_kwargs
     )
 

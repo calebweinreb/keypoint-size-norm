@@ -28,7 +28,7 @@ def gaussian_product(
     B: Float[Array, "*#K M M"],
     Ainv: Optional[Float[Array, "*#K M M"]] = None,
     Binv: Optional[Float[Array, "*#K M M"]] = None,
-    unnormalized: bool = False,
+    return_normalizer: bool = False,
     ) -> Tuple[Float[Array, "*#K"],
                Float[Array, "*#K M"],
                Float[Array, "*#K M M"]]:
@@ -47,7 +47,7 @@ def gaussian_product(
         B: Covariance of the second Gaussian PDF term.
         Ainv: Optional precomputed inverse of A.
         Binv: Optional precomputed inverse of B.
-        unnormalized: Do not compute Gaussian normalizer terms in `const`.
+        return_normalizer: Do not compute Gaussian normalizer terms for `const`.
     
     Returns:
         const: Normalization constant for the resulting expression.
@@ -66,11 +66,12 @@ def gaussian_product(
         quadform(a, Ainv) + quadform(b, Binv) - quadform(c, Cinv)
     ) / (-2))
 
-    if not unnormalized:
-        K *= jnp.sqrt(
+    if return_normalizer:
+        normalizer = jnp.sqrt(
             jnp.linalg.det(C) / jnp.linalg.det(A) / jnp.linalg.det(B) *
             (2 * jnp.pi) ** (C.shape[-1] - A.shape[-1] - B.shape[-1])
         )
+        return K, c, C, normalizer
     
     return K, c, C
 
@@ -157,4 +158,60 @@ def extract_tril_cholesky(
 
 
     
+def unstack(
+    arr,
+    ixs,
+    N = None,
+    axis = 0
+    ) -> Tuple:
+    """
+    Convert stacked axis to list of original axes.
+
+    Args:
+        arr: Array-like (Na..., Nt, Nb...) Array to split by subject.
+        ixs: Indices in the unstacked array.
+        N: Number of unique indices.
+            If not given, then will be inferred from `ixs`.
+        axis: Axis along which to split `arr`
+
+    Returns:
+        arrs: Arrays (Na..., T, Nb...) for each subject.
+    """
+    if N is None: N = ixs.max() + 1
+    return tuple(
+        jnp.take(arr, jnp.where(ixs == i)[0], axis = axis)
+        for i in range(N))
+
+
+def linear_transform_gaussian(
+    query_point: Float[Array, "*#K M"],
+    cov: Float[Array, "*#K M M"],
+    A: Float[Array, "*#K M M"],
+    Ainv: Float[Array, "*#K M M"] = None,
+    cov_inv: Float[Array, "*#K M M"] = None,
+    return_cov_inv = False,
+    return_normalizer = False,
+    ) -> Tuple[Float[Array, "*#K M"], Float[Array, "*#K M M"]]:
+    
+    if Ainv is None: Ainv = jnp.linalg.inv(A)
+
+    new_mean = (Ainv @ query_point[..., None])[..., 0]
+    new_cov = Ainv @ cov @ jnp.swapaxes(Ainv, -2, -1)
+    
+    if return_cov_inv:
+        if cov_inv is None: cov_inv = jnp.linalg.inv(cov)
+        new_cov_inv = jnp.swapaxes(A, -2, -1) @ cov_inv @ A
+        
+        if return_normalizer:
+            normalizer = (jnp.linalg.det(new_cov) / jnp.linalg.det(cov)) ** 0.5
+            return new_mean, new_cov, new_cov_inv, normalizer
+        
+        return new_mean, new_cov, new_cov_inv
+
+    if return_normalizer:
+        normalizer = (jnp.linalg.det(new_cov) / jnp.linalg.det(cov)) ** 0.5
+        return new_mean, new_cov, normalizer
+    
+    return new_mean, new_cov
+
 

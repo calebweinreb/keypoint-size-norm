@@ -9,7 +9,8 @@ from .pose_model import *
 
 from ...util.computations import (
     expand_tril_cholesky, extract_tril_cholesky,
-    gaussian_product, normal_quadform_expectation)
+    gaussian_product, normal_quadform_expectation,
+    linear_transform_gaussian)
 
 
 class GMMParameters(NamedTuple):
@@ -89,8 +90,6 @@ def aux_distribution(
     params: GMMParameters,
     hyperparams: GMMHyperparams,
     morph_inv: Float[Array, "N M KD"] = None,
-    posespace_keypts: Float[Array, "Nt M"] = None,
-    posespace_cov_inv: Float[Array, "N M M"] = None
     ) -> Tuple[Float[Array, "Nt L"], GMMAuxPDF]:
     """
     Calculate the auxiliary distribution for EM.
@@ -120,36 +119,42 @@ def aux_distribution(
     # optionally use precomputed values
     if morph_inv is None:
         morph_inv = jnp.linalg.inv(morph_matrix)
-    if posespace_keypts is None:
-        posespace_keypts: Float[Array, "Nt M"] = (
-            morph_inv[observations.subject_ids] @
-            observations.keypts[..., None]
-        )[..., 0]
-    if posespace_cov_inv is None:
-        posespace_cov_inv = (
-            jnp.swapaxes(morph_matrix, -2, -1) @ morph_matrix / hyperparams.eps
-        )[observations.subject_ids]
 
-    # Compute mean and covariances going into Gaussian product
-    a = posespace_keypts[:, None]
+    # Compute distribution in pose space including observation noise
     KD: int = morph_matrix.shape[1]
-    A: Float[Array, "Nt M M"] = (
-        morph_inv @ jnp.swapaxes(morph_inv, -2, -1) * hyperparams.eps
-    )[observations.subject_ids][:, None]
-    Ainv: Float[Array, "Nt M M"] = posespace_cov_inv[:, None]
-    b: Float[Array, "L M"] = params.means[None, :]
-    B: Float[Array, "L M M"] = params.covariances()[None, :]
+    ps_mean, ps_cov, ps_cov_inv, normalizer = linear_transform_gaussian(
+        query_point = observations.keypts, # (Nt, KD)
+        cov = hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
+        A = morph_matrix[observations.subject_ids], # (Nt, KD, M)
+        Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
+        cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
+        return_cov_inv = True,
+        return_normalizer = True
+    )
+    
+    # Compute mean and covariances going into Gaussian product
+    a: Float[Array, "Nt 1 M"] = ps_mean[:, None]
+    A: Float[Array, "Nt 1 M M"] = ps_cov[:, None]
+    Ainv: Float[Array, "Nt 1 M M"] = ps_cov_inv[:, None]
+    b: Float[Array, "1 L M"] = params.means[None, :]
+    B: Float[Array, "1 L M M"] = params.covariances()[None, :]
 
     # Compute gaussian product with normalizer terms
     # The transformation that turns the PDF in y into a PDF in x introduces
     # normalizer terms that cancel Z_A = Z_{C^{-1} R C^{-1}^T} and replace
     # it with a normalizer Z_R.
-    K, c, C = gaussian_product(a, A, b, B, Ainv = Ainv, unnormalized = True)
-    K *= jnp.sqrt(
-        jnp.linalg.det(C) / jnp.linalg.det(B) / (hyperparams.eps ** KD) *
-        (2 * jnp.pi) ** (C.shape[-1] - B.shape[-1] - KD)
-    )
-
+    K, c, C, gp_norm = gaussian_product(a, A, b, B, Ainv = Ainv,
+        return_normalizer = True)
+    
+    # more efficient normalizer calculation that removes two determinant calls
+    # custom_norm = jnp.sqrt(
+    #     jnp.linalg.det(C) / jnp.linalg.det(B) / (hyperparams.eps ** KD) *
+    #     (2 * jnp.pi) ** (C.shape[-1] - B.shape[-1] - KD)
+    # )
+    
+    combined_norm = normalizer[:, None] * gp_norm
+    K *= combined_norm
+    
     return K, GMMAuxPDF(mean = c, cov = C)
 
 
@@ -194,23 +199,26 @@ def logprob_expectations(
 
     if morph_inv is None:
         morph_inv = jnp.linalg.inv(morph_matrix)
-    if posespace_keypts is None:
-        posespace_keypts: Float[Array, "Nt M"] = (
-            morph_inv[observations.subject_ids] @
-            observations.keypts[..., None]
-        )[..., 0]
-    if posespace_cov_inv is None:
-        posespace_cov_inv = (
-            jnp.swapaxes(morph_matrix, -2, -1) @ morph_matrix / hyperparams.eps
-        )[observations.subject_ids]
 
+
+    # Compute distribution in pose space including observation noise
+    KD: int = morph_matrix.shape[1]
+    ps_mean, ps_cov, ps_cov_inv, normalizer = linear_transform_gaussian(
+        observations.keypts, # (Nt, KD)
+        hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
+        morph_matrix[observations.subject_ids], # (Nt, KD, M)
+        Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
+        cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
+        return_cov_inv = True,
+        return_normalizer = True
+    )
 
     # ----- Compute expectation terms
 
     obs_term = normal_quadform_expectation(
         aux_pdf.mean, aux_pdf.cov,
-        posespace_keypts[:, None],
-        posespace_cov_inv[:, None]
+        ps_mean[:, None],
+        ps_cov_inv[:, None]
     )
 
     query_Q = query_params.covariances()
@@ -219,7 +227,7 @@ def logprob_expectations(
         query_params.means,
         jnp.linalg.inv(query_Q)
     )
-    posespace_norm = jnp.log(jnp.linalg.det(query_Q)) * query_Q.shape[2]
+    posespace_norm = jnp.log(jnp.linalg.det(query_Q))
     
     return (obs_term + posespace_term + posespace_norm) / (-2)
 
