@@ -65,45 +65,31 @@ class Observations(NamedTuple):
             arrs: Arrays (Na..., T, Nb...) for each subject.
         """
         return unstack(arr, self.subject_ids, N = N, axis = axis)
-        
+    
+
+class EMAuxPDF(NamedTuple):
+    """
+    Constants and supporting values for calculating the auxiliary distribution
+    in EM under a set of estimated parameters.
+
+    :param consts: Array-like, shape (Nt, L)
+        Probabilities of data points given the discrete pose state varaible and
+        estimated parameters.
+    """
+    consts: Float[Array, "Nt L"]
 
 
 class PoseSpaceModel(NamedTuple):
+    discrete_mle: Callable[..., PoseStates]
     sample: Callable[..., Tuple[PoseStates, Integer[Array, "Nt"]]]
     sample_parameters: Callable[..., PoseSpaceParameters]
     logprob_expectations: Callable[..., Float[Array, "Nt L"]]
     discrete_prob: Callable[..., Float[Array, "N L"]]
-    aux_distribution: Callable[..., Tuple[Float[Array, "Nt L"], Any]]
+    aux_distribution: Callable[..., EMAuxPDF]
+    init: Callable[..., Tuple[PoseSpaceParameters]]
 
 
 
-def point_weights(
-    aux_dist_consts: Float[Array, "Nt L"],
-    discrete_probs: Float[Array, "N L"],
-    subject_ids: Integer[Array, "Nt"],
-    ) -> Float[Array, "Nt L"]:
-    """
-    Calculate term weights in the objective function.
-
-    This function computes the weights for each data point and
-    discrete pose state pairing in the objective function, with
-    weights normalized over discrete state space values.
-
-    Args:
-        aux_dist_consts: Constants from the model `aux_distribution`
-        discrete_probs: Array from the model `discrete_probs`
-        subject_ids: Subject assignments in `Nt` axis.
-
-    Returns:
-        weights: Weights for each term in the objective function.
-    """
-
-    # shape: (Nt, L)
-    unnormalized = aux_dist_consts * discrete_probs[subject_ids]
-    # shape: (1, L)
-    normalizers = unnormalized.sum(axis = 1, keepdims = True)
-
-    return unnormalized / normalizers
 
 
 def common_logprob_expectations(
@@ -127,10 +113,10 @@ def objective(
     posespace_model: PoseSpaceModel,
     observations: Observations,
     query_morph_matrix: Float[Array, "N KD M"],
-    est_morph_matrix: Float[Array, "N KD M"],
     query_params: PoseSpaceParameters,
-    estimated_params: PoseSpaceParameters,
     hyperparams: PoseSpaceHyperparams,
+    aux_pdf: EMAuxPDF,
+    term_weights: Float[Array, "Nt L"],
     ) -> Scalar:
     """
     Objective function for M-step to maximize.
@@ -140,13 +126,6 @@ def objective(
     
     # ----- Compute terms of the objective function
 
-    consts, aux_pdf = posespace_model.aux_distribution(
-        observations, est_morph_matrix, estimated_params, hyperparams
-    )
-    est_discrete_probs = posespace_model.discrete_prob(
-        estimated_params, hyperparams)
-    term_weights: Float[Array, "Nt L"] = point_weights(
-        consts, est_discrete_probs, observations.subject_ids)
     model_log_exp: Float[Array, "Nt L"] = posespace_model.logprob_expectations(
         observations, query_morph_matrix, query_params, hyperparams, aux_pdf
     )

@@ -35,6 +35,7 @@
 \newcommand{\EE}{\mathbb{E}}
 \newcommand{\RR}{\mathbb{R}}
 \newcommand{\NN}{\mathcal{N}}
+\newcommand{\mat}[1]{\begin{matrix} #1 \end{matrix}}
 \newcommand{\abs}[1]{\left| #1 \right|}
 \newcommand{\norm}[1]{\left|\left| #1 \right|\right|}
 \newcommand{\cb}[1]{\left\{ #1 \right\}}
@@ -292,7 +293,7 @@ The theoretical guarantees of EM are achieved by taking the latent distribution 
 The main challenge in computing this objective function is the integral over $x$, which must be handled analytically. We begin by calculating the joint probability $P(y, x \mid z, \theta_{C,n}^*)$ for a particular subject and timepoint in terms of the linear transform provided by the morph model and the continuous pose state distribution $F$:
 \begin{align}
     P(y, x \mid z, \theta_{C, n}^*) &= P(y \mid x, \theta_{C, n}) P(x\mid z, \theta^*) \\
-    &= \NN(y\mid C_n(\phi^*)\, x, R^*) F_{\psi^*\mid z}(x) \label{eq:norm-F-prod}
+    &= \NN(y\mid C_n(\phi^*)\, (x - d_n(\phi^*)), R^*) F_{\psi^*\mid z}(x) \label{eq:norm-F-prod}
 \end{align}
 Our central task for each pose space model will be to rewrite this probability as a constant in $x$ times a probability distribution $s(x)$ for which expectations of log probability terms arising from $\log P(y^t_n, x, z \mid \theta_C)$ are known,
 \begin{align}
@@ -320,25 +321,26 @@ Putting together equations \ref{eq:obj-general}, \ref{eq:q-general}, \ref{eq:s-d
 To evaluate the requirement that $s$ be a distribution analytically integrable against log probability terms appearing in the objective function requires an enumeration of such terms. We may expand the log probability to arrive at a set of terms, all of which will arise from the pose space model
 \begin{align}
     \log P(y^t_n, x, z \mid \theta_C) &= \log P(y^t_n \mid x, \theta_C) + \log P(x\mid z, \theta) + \log P(z\mid \theta) \\
-    &= \log \NN(y^t_n \mid C_n(\phi)\, x, R) + \log F_{\psi\mid z}(x) + \log G_{\pi_n}(z)
+    &= \log \NN(y^t_n \mid C_n(\phi)\, (x - d_n(\phi)), R) + \log F_{\psi\mid z}(x) + \log G_{\pi_n}(z)
     \label{eq:logprob-terms}
 \end{align}
 The final term does not vary in $x$ and therefore does not need to be integrated against $s$. This requirement thus amounts to integrability of a normal and $F$ log probabilities against $s$. The normal term will always need to be rewritten as PDF in $x$
 \begin{align}
-    \log \NN(y\mid C_n x, R) &= \log\pn{\frac{Z_{R}}{Z_{C_n\inv R {C_n^T}\inv}} \NN\pn{x\mid C_n\inv y,\; C_n\inv R\, {C_n^T}\inv}} \\ &= \log Z_{R} - \frac{1}{2}\norm{x - C_n\inv y}^2_{C_n\inv R\, {C_n^T}\inv}
+    \log \NN(y\mid C_n(x - d_n), R) &= \log\pn{\frac{Z_{R}}{Z_{C_n\inv R {C_n^T}\inv}} \NN\pn{x - d_n\mid C_n\inv y,\; C_n\inv R\, {C_n^T}\inv}} \\ &= \log Z_{R} - \frac{1}{2}\norm{(x - d_n) - C_n\inv y}^2_{C_n\inv R\, {C_n^T}\inv}
     \label{eq:cn-swap}
 \end{align}
-where the dependence of $C_n$ on $\phi$ is dropped for readability. The result is an unnormalized Gaussian log probability to be integrated against $s(x)$ and a normalizer term that may be computed independent of the morph model. 
+where the dependence of $C_n$ on $\phi$ is dropped for readability. The result is an unnormalized Gaussian log probability to be integrated against $s(x)$ and a normalizer term that may be computed independent of the morph model. We now prove the statement in which we inverted the affine-transformed Gaussian PDF:
+\begin{proof} For vectors $x\in \RR^M$ and $y\in \RR^N$ and matrices $A\in \RR^{N\times M}, B\in \RR^{N\times N}$, we may expand a normal PDF as a normalizer times a squared Mahalanobis distance:
+    \begin{align}
+        \NN(y\mid Ax, B) &= Z_{B} \exp\cb{-\frac{1}{2}\norm{y - A(x - c)}^2_{B}} \\
+        &= Z_{B} \exp\cb{-\frac{1}{2}(y - Ax)^TB\inv(y - Ax)} \\
+        &= Z_{B} \exp\cb{-\frac{1}{2}(A\inv y - x)^TA^TB\inv A(A\inv y - x)} \\
+        &= Z_{B} \exp\cb{-\frac{1}{2}\norm{A\inv y - x}^2_{A\inv B{A\inv}^T}} \\
+        &= \frac{Z_{B}}{Z_{A\inv B{A\inv}^T}} \NN\pn{x\mid A\inv y, \; A\inv B{A\inv}^T}
+    \end{align}        
+\end{proof}
 
-\subsection{Double-checking Gaussian linear transform}
 
-\begin{align}
-    \NN(y\mid Ax, B) &= Z_{B} \exp\cb{-\frac{1}{2}\norm{y - Ax}_{B}} \\
-    &= Z_{B} \exp\cb{-\frac{1}{2}(y - Ax)^TB\inv(y - Ax)} \\
-    &= Z_{B} \exp\cb{-\frac{1}{2}(A\inv y - x)^TA^TB\inv A(A\inv y - x)} \\
-    &= Z_{B} \exp\cb{-\frac{1}{2}\norm{A\inv y - x}_{A\inv B{A\inv}^T}} \\
-    &= \frac{Z_{B}}{Z_{A\inv B{A\inv}^T}} \NN\pn{x\mid A\inv y, \; A\inv B{A\inv}^T}
-\end{align}
 
 \section{Morph models}
 
@@ -346,9 +348,39 @@ where the dependence of $C_n$ on $\phi$ is dropped for readability. The result i
 
 Before introducing spatially nonlinear morphs, we begin by working with $C_n(\phi) = e^{\phi_n} I_{KD}$, letting the morph model be parameterized by a vector $\phi \in \RR^N$. Latent pose space dimension cannot compress keypoint space using a scalar morph, so $M = KD$.
 
+\subsection{Affine modal rotation}
+
+The first (dare I say ...only?) non-rigid morph we will consider is an affine linear transform which rotates a limited number of dimensions around a centroid. We now define this morph model and derive the required terms to implement it in the mix-and-match fitting framework.
+
+Let $L$ be an integer d.o.f. hyperparameter giving the number of axes to be rotated, and define the subject-wise parameter tuple $\phi_n = (\alpha_n, s_n, U, \hat{U}_n)$
+\begin{itemize}
+    \item $\alpha\in\RR$ - subject-wise uniform scale factor to be applied to all dimensions of pose space
+    \item $s_n \in \RR^L$ - subject-wise scale factor for each morph dimension    
+    \item $U\in \RR^{KD\times L}$ - matrix whose columns give the population-wide dimensions to be morphed. \textit{The ``PC modal rotation'' morph is the special case where the columns of $U$ are the first $L$ principal components and considered a hyperparameter instead of being learned}
+    \item $\hat{U}_n\in\RR^{KD \times L}$ - matrix whose columns give subject-wise updates to the morph dimensions
+\end{itemize}
+
+In practice the morph is parameterized according to an unnormalized $\tilde{U}$ and logarithms of $\alpha_n$ and $s_n$. Let $\bar{U}$ be the projection on to the orthogonal complement of $U$, which will be used as a pass-through for those dimensions of pose space that should be effected only by uniform scaling.
+
+To understand the action of the morph, consider the $L=2$ case in which the columns of $U$, which we call $u_1$ and $u_2$, are orthonormal. Let $\hat{u}_1, \hat{u}_2$ be the updates to the morph dimensions for subject $n$. Then the action of $C(\phi_n)$ on $\text{span}(u_1, u_2)$ - the subspace spanned by the morph dimensions - is a perturbation of the diagonal matrix with SVD $U\text{diag}(\alpha s_n) U^T$, namely
+\begin{align}
+    C(\phi_n) : x\in \text{span(U)} \mapsto \bc{\mat{ | & | \\ \frac{u_1 + \hat{u}_1}{\norm{u_1 + \hat{u}_1}} & \frac{u_2 + \hat{u}_2}{\norm{u_2 + \hat{u}_2}} \\ | & |  }}
+    \bc{\mat{ \alpha s_1 & \\ & \alpha s_2 }}
+    \bc{\mat{ - & u_1^T & - \\ - & u_2^T & -}}x
+\end{align}
+The action of $C(\phi_n)$ on the orthogonal complement of $U$ should then be the identity. We normalize the columns of the leftmost matrix to separate priors on rotation and scaling. Removing the requirement of orthogonal of the morph dimensions, we have the general expression:
+\begin{align}
+    C(\phi_n) = \alpha \bc{ \bar{U} + \pn{U + \hat{U}_n}\text{Diag}\pn{s_n}U^+ }
+\end{align}
+with $U^+$ being the Moore-Penrose pseudoinverse of U.
+
+
+
+
+
+
 
 \section{Pose space models}
-
 
 
 \subsection{Gaussian mixture}

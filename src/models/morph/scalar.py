@@ -1,10 +1,11 @@
-from typing import NamedTuple
+from typing import NamedTuple, Tuple
 from jaxtyping import Array, Float, Scalar, PRNGKeyArray as PRNGKey
 import jax.random as jr
 import jax.numpy as jnp
 
 from .morph_model import MorphModel
-
+from ..pose.pose_model import Observations
+from ...util import pca
 
 
 class ScalarMorphParameters(NamedTuple):
@@ -72,8 +73,26 @@ def sample_parameters(
             shape = (hyperparams.N,))
     )
 
+def init(
+    hyperparams: ScalarMorphHyperparams,
+    observations: Observations,
+    reference_subject: int,
+    seed: int = 0
+    ) -> Tuple[ScalarMorphParameters]:
+    """
+    Initialize `ScalarMorphParameters` and pose latents
+    """
+    # ref_keypts = observations.unstack(observations.keypts)[reference_subject]
+    # pca = pca.fit(ref_keypts)
+    return ScalarMorphParameters(
+        scale_log = jnp.zeros(hyperparams.N)
+        # pca.pcs()[:hyperparams.L, :]
+    )
+
+
 
 ScalarMorph = MorphModel(
     sample_parameters = sample_parameters,
-    get_transform = get_transform
+    get_transform = get_transform,
+    init = init
 )

@@ -178,9 +178,31 @@ def unstack(
         arrs: Arrays (Na..., T, Nb...) for each subject.
     """
     if N is None: N = ixs.max() + 1
+    # for i in range(N):
+    #     print(arr.shape, jnp.where(ixs == i)[0])
     return tuple(
         jnp.take(arr, jnp.where(ixs == i)[0], axis = axis)
         for i in range(N))
+
+def restack(
+    arrs,
+    ) -> Array:
+    """
+    Convert unstacked array back to stacked.
+    
+    Equivalent to flatten, but reliably mimicks unstack
+
+    To get `ixs`, perform
+        restack(broadcast_to(arange(|A|)[:, None]), [|A|, |B|])
+    or similar for |B|.
+    
+    Args:
+        arrs: Array-like or tuple of array-like, shape (A, B, ...)
+
+    Returns:
+        stacked: Array-like of shpe (A * B, ...)
+    """
+    return jnp.stack(arrs).flatten()
 
 
 def linear_transform_gaussian(
@@ -215,3 +237,27 @@ def linear_transform_gaussian(
     return new_mean, new_cov
 
 
+def sq_mahalanobis(
+    x: Float[Array, "*#K M"],
+    y: Float[Array, "*#K M"],
+    cov: Optional[Float[Array, "*#K M M"]] = None,
+    cov_inv: Optional[Float[Array, "*#K M M"]] = None
+    ):
+    """
+    Args:
+        x, y: Array-like, shape (..., M)
+            Batch of vectors do calculate distances between
+        cov: Array-like, PSD, shape (..., M)
+            Covariance matrix defining the Mahalanobis distance.
+        cov_inv: Array-like, shape (..., M)
+            Inverse covariance matrix. Required if `cov` is not provided.
+    Returns:
+        dists: Array-like, shape (...)
+            Scalar squared distances.
+    """
+    diff = x - y
+    assert cov is not None or cov_inv is not None, (
+        "One of `cov` or `cov_inv` required.")
+    if cov_inv is None:
+        cov_inv = jnp.linalg.inv(cov)
+    return (diff[..., None, :] @ cov_inv @ diff[..., :, None])[..., 0, 0]

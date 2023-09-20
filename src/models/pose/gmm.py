@@ -1,10 +1,19 @@
 from typing import NamedTuple, Tuple
 from jaxtyping import Array, Float, Float32, Integer, Scalar, PRNGKeyArray as PRNGKey
+from sklearn import mixture
+import numpy.random as nr
+import numpy as np
 import jax.numpy as jnp
+import jax.numpy as jnp
+import jax.numpy as jnp
+from sklearn import mixture
 import jax.random as jr
 import jax.nn as jnn
 
 from .pose_model import *
+from ...util.computations import (
+    extract_tril_cholesky, restack, sq_mahalanobis
+)
 
 
 from ...util.computations import (
@@ -80,6 +89,7 @@ class GMMAuxPDF(NamedTuple):
     :param mean: Mean of the normal PDF.
     :param cov: Covariance matrix of the normal PDF.
     """
+    consts: Float[Array, "Nt L"]
     mean: Float[Array, "Nt L M"]
     cov: Float[Array, "Nt L M M"]
 
@@ -155,7 +165,7 @@ def aux_distribution(
     combined_norm = normalizer[:, None] * gp_norm
     K *= combined_norm
     
-    return K, GMMAuxPDF(mean = c, cov = C)
+    return GMMAuxPDF(consts = K, mean = c, cov = C)
 
 
 def discrete_prob(
@@ -335,12 +345,91 @@ def sample(
     return GMMPoseStates(components = z, poses = x), subject_ids
 
 
+def init_parameters_and_latents(
+    hyperparams: GMMHyperparams,
+    observations: Observations,
+    reference_subject: int,
+    seed: int = 0,
+    count_eps: float = 1e-3
+    ) -> Tuple[GMMParameters, GMMPoseStates]:
+    """
+    Initialize a GMMPoseSpaceModel based on observed keypoint data.
+
+    This function uses a single subject's keypoint data to initialize a
+    `GMMPoseSpaceModel` based on a standard Gaussian Mixture.
+
+    Args:
+        hyperparams: GMMHyperparams
+            Hyperparameters of the pose space model.
+        poses:
+            Pose state latents as given by initialization of a morph model.
+        observations: pose.Observations
+            Keypoint-space observations to estimate the pose space model from.
+        reference_sibject: int
+            Subject ID in `observations` to initialize
+        count_eps: float
+            Count representing no observations in a component. Component weights
+            are represented as logits (logarithms) which cannot capture zero
+            counts, so instances of zero counts are replaced with `count_eps` to
+            indicate a very small cluster weight.
+    Returns:
+        init_params: GMMHyperparams
+            Initial parameters for a `GMMPoseSpaceModel`
+        init_states: GMMPoseStates
+            Initial pose states for a `GMMPoseSpaceModel`
+    """
+
+    # fit GMM to reference subject
+    init_pts = observations.unstack(observations.keypts)[reference_subject]
+    init_mix = mixture.GaussianMixture(
+        n_components = hyperparams.L, 
+        random_state = nr.RandomState(seed),
+    ).fit(init_pts)
+
+    # get component labels & counts across all subjects
+    init_components = jnp.array(observations.unstack(
+        init_mix.predict(observations.keypts))) # shape (N, T)
+    init_counts = np.zeros([hyperparams.N, hyperparams.L])
+    for i_subj in range(hyperparams.N):
+        uniq, count = np.unique(
+            init_components[i_subj],
+            return_counts = True)
+        init_counts[i_subj][uniq] = count
+    init_counts[init_counts == 0] = count_eps
+    
+    return GMMParameters(
+        weight_logits = jnp.log(init_counts),
+        means = init_mix.means_,
+        cholesky = extract_tril_cholesky(init_mix.covariances_)
+    )
+
+
+def discrete_mle(
+    poses: Float[Array, "Nt M"],
+    hyperparams: GMMHyperparams,
+    estimated_params: GMMParameters
+    ) -> GMMPoseStates:
+    """
+    Estimate pose model discrete latents given poses.
+    """
+    dists = sq_mahalanobis(
+        poses[:, None],
+        estimated_params.means[None, :],
+        estimated_params.covariances()[None, :])
+    return GMMPoseStates(
+        components = dists.argmin(axis = 1),
+        poses = poses
+    )
+
+
 GMMPoseSpaceModel = PoseSpaceModel(
+    discrete_mle = discrete_mle,
     sample = sample,
     sample_parameters = sample_parameters,
     logprob_expectations = logprob_expectations,
     discrete_prob = discrete_prob,
-    aux_distribution = aux_distribution
+    aux_distribution = aux_distribution,
+    init = init_parameters_and_latents
 )
 
 

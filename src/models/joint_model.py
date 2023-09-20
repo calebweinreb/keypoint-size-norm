@@ -56,3 +56,13 @@ def sample(
 
     return morph_params, pose_params, pose_latents, obs
     
+def latent_mle(
+    model: JointModel,
+    observations: pose.Observations,
+    params: JointParameters,
+    hyperparams: JointHyperparams,
+    ) -> pose.PoseStates:
+    poses = model.morph.pose_mle(
+        observations, params.morph, hyperparams.morph)
+    return model.posespace.discrete_mle(
+        poses, hyperparams.posespace, params.posespace)
