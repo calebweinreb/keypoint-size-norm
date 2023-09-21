@@ -1,6 +1,7 @@
 from typing import NamedTuple, Tuple, Protocol
 from jaxtyping import Scalar, Float, Array, Integer
 from functools import partial
+from jax.tree_util import tree_flatten, tree_unflatten
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -10,19 +11,23 @@ import jax
 from ..models import pose
 from ..models import joint_model
 
+def _scale_updates(updates, factor):
+    val_flat, val_tree = tree_flatten(updates)
+    val_scaled = list(map(lambda v: v * factor, val_flat))
+    return tree_unflatten(val_tree, val_scaled)
+
+
 def _check_should_stop_early(loss_hist, tol):
     """
     Check for average decrease in loss that is worse than `tol`.
 
     Args:
-        loss_hist: jax.ndarray, shape: (N,)
-            Last `N` observations of loss. NaNs indicate an incomplete history
-            that should always continue.
+        loss_hist: np.ndarray, shape: (N,)
+            Last `N` observations of loss.
         tol: Scalar
             Required average improvement to continue.
     """
-    mean = jnp.diff(loss_hist).mean()
-    return np.isfinite(mean) and mean < -tol
+    return np.diff(loss_hist).mean() > -tol
     
 
 def _point_weights(
@@ -132,7 +137,18 @@ def _mstep(
     n_steps: int,
     log_every: int,
     progress = False,
+    tol: float = None,
+    stop_window: int = 10,
+    morph_bias = None
     ) -> Tuple[Float[Array, "n_steps"], joint_model.JointParameters]:
+    """
+    Args:
+        tol: float > 0
+            Stop iterations if average improvement over `stop_window` is
+            not better than `tol`.
+        stop_window: int
+            Number of iterations over which to assess early stopping. 
+    """
 
     # ----- Define the step function with weight update
 
@@ -143,15 +159,22 @@ def _mstep(
         loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
             params, emissions, hyperparams, aux_pdf, term_weights)
         updates, opt_state = optimizer.update(grads, opt_state, params)
+        if morph_bias is not None:
+            updates = joint_model.JointParameters(
+                posespace = updates.posespace,
+                morph = _scale_updates(updates.morph, morph_bias))
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss_value
 
-    # ---- Run M-step iterations
+    # ----- Set up variables for iteration
 
     curr_params = init_params
     opt_state = optimizer.init(init_params)
     loss_hist = np.empty([n_steps])
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
+    
+    # ---- Run M-step iterations
+
     for step_i in iter:
         curr_params, opt_state, loss_value = step(
             opt_state, curr_params,
@@ -161,4 +184,93 @@ def _mstep(
         if (log_every > 0) and (not step_i % log_every):
             print(f"Step {step_i} : loss = {loss_value}")
 
+        # evaluate early stopping
+        if (tol is not None and step_i > stop_window and 
+            _check_should_stop_early(
+                loss_hist[step_i-stop_window:step_i+1], tol)
+            ):
+            loss_hist = loss_hist[:step_i+1]
+            break
+
     return loss_hist, curr_params
+
+
+def iterate_em(
+    model: joint_model.JointModel,
+    init_params: joint_model.JointParameters,
+    emissions: pose.Observations,
+    hyperparams: joint_model.JointHyperparams,
+    n_steps: int,
+    log_every: int,
+    progress = False,
+    tol: float = None,
+    stop_window: int = 5,
+    mstep_learning_rate: float = 5e-3,
+    mstep_n_steps: int = 2000,
+    mstep_log_every: int = -1,
+    mstep_progress = False,
+    mstep_tol: float = None,
+    mstep_stop_window: int = 10,
+    mstep_morph_bias: float = None,
+    return_mstep_losses = False,
+    return_param_hist = False
+    ) -> Tuple[
+        Float[Array, "n_steps"], joint_model.JointParameters,
+        Float[Array, "n_steps mstep_n_steps"],
+        Tuple[joint_model.JointParameters]]:
+    """
+    Perform EM on a JointModel. 
+    """
+
+    curr_params = init_params
+    loss_hist = np.empty([n_steps])
+    iter = range(n_steps) if not progress else tqdm.trange(n_steps)
+    if return_mstep_losses:
+        mstep_losses = np.full([n_steps, mstep_n_steps], np.nan)
+    if return_param_hist:
+        param_hist = [curr_params]
+
+    for step_i in iter:
+        aux_pdf, term_weights = _estep(
+            model = model,
+            observations = emissions,
+            estimated_params = curr_params,
+            hyperparams = hyperparams
+            )
+        loss_hist_mstep, fit_params_mstep = _mstep(
+            model = model,
+            init_params = curr_params,
+            aux_pdf = aux_pdf,
+            term_weights = term_weights,
+            emissions = emissions,
+            hyperparams = hyperparams,
+            optimizer = optax.adam(learning_rate=mstep_learning_rate),
+            n_steps = mstep_n_steps,
+            log_every = mstep_log_every,
+            progress = mstep_progress,
+            tol = mstep_tol,
+            stop_window = mstep_stop_window,
+            morph_bias = mstep_morph_bias
+        )
+        loss_hist[step_i] = loss_hist_mstep[-1]
+        curr_params = fit_params_mstep
+        if return_mstep_losses:
+            mstep_losses[step_i, :len(loss_hist_mstep)] = loss_hist_mstep
+        if return_param_hist:
+            param_hist.append(curr_params)
+        
+        if (log_every > 0) and (not step_i % log_every):
+            print(f"Step {step_i} : loss = {loss_hist[step_i]}")
+
+        # evaluate early stopping
+        if (tol is not None and step_i > stop_window and 
+            _check_should_stop_early(
+                loss_hist[step_i-stop_window:step_i+1], tol)
+            ):
+            loss_hist = loss_hist[:step_i+1]
+            break
+        
+    ret = loss_hist, curr_params
+    if return_mstep_losses: ret = ret + (mstep_losses,)
+    if return_param_hist: ret = ret + (param_hist,)
+    return ret 
