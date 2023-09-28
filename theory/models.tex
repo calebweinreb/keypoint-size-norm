@@ -272,13 +272,15 @@ We are then able to recapitulate the objective function \ref{eqn:objective} up t
 
 To enable modular combination of pose space distributions and morphs, we derive EM in a more general setting.
 
-Pose space models will in general support a discrete state $z$ whose distribution is allowed to vary by subject in terms of parameters $\pi_n$, and a continuous state distributed conditionally on $z$ in terms of parameters $\psi$. Morph models will support a subject-wise linear transformation from pose space to keypoint space specified by parameters $\phi_n$, which generate observed data up to measurement noise with covariance $R$. The total parameter set available to the pose space model $\theta = (\pi, \psi, R)$, and $\theta, \phi$ together parameterize the full model.
+Pose space models will in general support a discrete state $z$ whose distribution is allowed to vary by subject in terms of parameters $\pi_n$, and a continuous state distributed conditionally on $z$ in terms of parameters $\psi$. Morph models will support a subject-wise affine transformation from pose space to keypoint space specified by parameters $\phi_n$, which generate observed data up to measurement noise with covariance $R$. The total parameter set available to the pose space model $\theta = (\pi, \psi, R)$, and $\theta, \phi$ together parameterize the full model.
 \begin{align}
     z^t_n &\sim G_{\pi_n} &
     x^t_n &\sim F_{\psi \mid z^t_n} &
-    y^t_n &\sim \NN(C_n(\phi_n) x_n^t, R)
+    y^t_n &\sim \NN(C_n(\phi) (x_n^t - d_n(\phi)), R)
 \end{align}
-Each morph model must simply compute the linear transformations $C_n$, but while most of the heavily lifting is left to the pose space models. The morph models therefore function on an extended parameter set $\theta_C = (\theta, C_n(\phi^*))$. When parameters for only one subject are needed, we will denote this as $\theta_{C,n} = (\pi_n, \psi, R, C_n(\phi^*))$.
+Each morph model must simply compute the affine transformation specified by $C_n, d_n$, while most of the heavily lifting is left to the pose space models.
+The full models therefore function on an extended parameter set $\theta_C = (\theta, C(\phi), d(\phi))$. When parameters for only one subject are needed, we will
+denote this as $\theta_{C,n} = (\pi_n, \psi, R, C_n(\phi), d(\phi))$.
 
 Each pose space model is responsible for computing the objective function that the M-step seeks to maximize, given the collection of linear transformations output by the morph model, in terms of an auxiliary distribution over the latents, $q_t(x, z)$:
 \begin{align}
@@ -326,18 +328,19 @@ To evaluate the requirement that $s$ be a distribution analytically integrable a
 \end{align}
 The final term does not vary in $x$ and therefore does not need to be integrated against $s$. This requirement thus amounts to integrability of a normal and $F$ log probabilities against $s$. The normal term will always need to be rewritten as PDF in $x$
 \begin{align}
-    \log \NN(y\mid C_n(x - d_n), R) &= \log\pn{\frac{Z_{R}}{Z_{C_n\inv R {C_n^T}\inv}} \NN\pn{x - d_n\mid C_n\inv y,\; C_n\inv R\, {C_n^T}\inv}} \\ &= \log Z_{R} - \frac{1}{2}\norm{(x - d_n) - C_n\inv y}^2_{C_n\inv R\, {C_n^T}\inv}
+    \log \NN(y\mid C_n(x - d_n), R) &= \log\pn{\frac{Z_{R}}{Z_{C_n\inv R {C_n^T}\inv}} \NN\pn{x\mid C_n\inv y + d_n,\; C_n\inv R\, {C_n^T}\inv}} \\ &= \log Z_{R} - \frac{1}{2}\norm{x - (C_n\inv y + d_n)}^2_{C_n\inv R\, {C_n^T}\inv}
     \label{eq:cn-swap}
 \end{align}
 where the dependence of $C_n$ on $\phi$ is dropped for readability. The result is an unnormalized Gaussian log probability to be integrated against $s(x)$ and a normalizer term that may be computed independent of the morph model. We now prove the statement in which we inverted the affine-transformed Gaussian PDF:
 \begin{proof} For vectors $x\in \RR^M$ and $y\in \RR^N$ and matrices $A\in \RR^{N\times M}, B\in \RR^{N\times N}$, we may expand a normal PDF as a normalizer times a squared Mahalanobis distance:
     \begin{align}
-        \NN(y\mid Ax, B) &= Z_{B} \exp\cb{-\frac{1}{2}\norm{y - A(x - c)}^2_{B}} \\
+        \NN(y\mid Ax, B) &= Z_{B} \exp\cb{-\frac{1}{2}\norm{y - Ax}^2_{B}} \\
         &= Z_{B} \exp\cb{-\frac{1}{2}(y - Ax)^TB\inv(y - Ax)} \\
         &= Z_{B} \exp\cb{-\frac{1}{2}(A\inv y - x)^TA^TB\inv A(A\inv y - x)} \\
         &= Z_{B} \exp\cb{-\frac{1}{2}\norm{A\inv y - x}^2_{A\inv B{A\inv}^T}} \\
         &= \frac{Z_{B}}{Z_{A\inv B{A\inv}^T}} \NN\pn{x\mid A\inv y, \; A\inv B{A\inv}^T}
-    \end{align}        
+    \end{align}
+Additionally, for $x,y,z$ in $\RR^N$ and $B\in\RR^{N\times N}$, $\NN(x - z \mid y, B) = \NN(x \mid y+z, B)$. Applying these two identities yields Eq. \ref{eq:cn-swap}.
 \end{proof}
 
 
@@ -352,12 +355,13 @@ Before introducing spatially nonlinear morphs, we begin by working with $C_n(\ph
 
 The first (dare I say ...only?) non-rigid morph we will consider is an affine linear transform which rotates a limited number of dimensions around a centroid. We now define this morph model and derive the required terms to implement it in the mix-and-match fitting framework.
 
-Let $L$ be an integer d.o.f. hyperparameter giving the number of axes to be rotated, and define the subject-wise parameter tuple $\phi_n = (\alpha_n, s_n, U, \hat{U}_n)$
+Let $L$ be an integer d.o.f. hyperparameter giving the number of axes to be rotated, and define the subject-wise parameter tuple $\phi_n = (\alpha_n, s_n, U, \hat{U}_n, \mu_n)$
 \begin{itemize}
-    \item $\alpha\in\RR$ - subject-wise uniform scale factor to be applied to all dimensions of pose space
-    \item $s_n \in \RR^L$ - subject-wise scale factor for each morph dimension    
-    \item $U\in \RR^{KD\times L}$ - matrix whose columns give the population-wide dimensions to be morphed. \textit{The ``PC modal rotation'' morph is the special case where the columns of $U$ are the first $L$ principal components and considered a hyperparameter instead of being learned}
-    \item $\hat{U}_n\in\RR^{KD \times L}$ - matrix whose columns give subject-wise updates to the morph dimensions
+    \item $\alpha\in\RR$ - subject-wise uniform scale factor to be applied to all dimensions of pose space.
+    \item $s_n \in \RR^L$ - subject-wise scale factor for each morph dimension.
+    \item $U\in \RR^{KD\times L}$ - matrix whose columns give the population-wide dimensions to be morphed. \textit{The ``PC modal rotation'' morph is the special case where the columns of $U$ are the first $L$ principal components and considered a hyperparameter instead of being learned}.
+    \item $\hat{U}_n\in\RR^{KD \times L}$ - matrix whose columns give subject-wise updates to the morph dimensions.
+    \item $\mu_n\in \RR^{KD}$ - center of the affine transform, so that $d_n(\phi) = \mu_n$. 
 \end{itemize}
 
 In practice the morph is parameterized according to an unnormalized $\tilde{U}$ and logarithms of $\alpha_n$ and $s_n$. Let $\bar{U}$ be the projection on to the orthogonal complement of $U$, which will be used as a pass-through for those dimensions of pose space that should be effected only by uniform scaling.
@@ -373,7 +377,6 @@ The action of $C(\phi_n)$ on the orthogonal complement of $U$ should then be the
     C(\phi_n) = \alpha \bc{ \bar{U} + \pn{U + \hat{U}_n}\text{Diag}\pn{s_n}U^+ }
 \end{align}
 with $U^+$ being the Moore-Penrose pseudoinverse of U.
-
 
 
 
