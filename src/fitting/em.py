@@ -66,11 +66,11 @@ def _estep(
     hyperparams: joint_model.JointHyperparams
     ) -> pose.PoseSpaceParameters:
 
-    est_morph_matrix = model.morph.get_transform(
+    est_morph_matrix, est_morph_ofs = model.morph.get_transform(
         estimated_params.morph,
         hyperparams.morph)
     aux_pdf = model.posespace.aux_distribution(
-        observations, est_morph_matrix,
+        observations, est_morph_matrix, est_morph_ofs,
         estimated_params.posespace, hyperparams.posespace
     )
     est_discrete_probs = model.posespace.discrete_prob(
@@ -95,7 +95,7 @@ def _mstep_objective(
     Calculate objective for M-step to maximize.
     """
 
-    morph_matrix = model.morph.get_transform(
+    morph_matrix, morph_ofs = model.morph.get_transform(
         query_params.morph,
         hyperparams.morph)
 
@@ -103,6 +103,7 @@ def _mstep_objective(
         model.posespace,
         observations,
         morph_matrix,
+        morph_ofs,
         query_params.posespace,
         hyperparams.posespace,
         aux_pdf,
@@ -126,6 +127,23 @@ def _mstep_loss(
     return step_loss_
 
 
+def construct_jitted_mstep(
+    model: joint_model.JointModel,
+    optimizer: optax.GradientTransformation):
+
+    loss_func = _mstep_loss(model)
+
+    @partial(jax.jit, static_argnums = (3,))
+    def step(opt_state, params, emissions, hyperparams, aux_pdf, term_weights):
+        loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
+            params, emissions, hyperparams, aux_pdf, term_weights)
+        updates, opt_state = optimizer.update(grads, opt_state, params)
+        params = optax.apply_updates(params, updates)
+        return params, opt_state, loss_value
+
+    return step
+
+
 def _mstep(
     model: joint_model.JointModel,
     init_params: optax.Params,
@@ -139,7 +157,7 @@ def _mstep(
     progress = False,
     tol: float = None,
     stop_window: int = 10,
-    morph_bias = None
+    jitted_step  = None,
     ) -> Tuple[Float[Array, "n_steps"], joint_model.JointParameters]:
     """
     Args:
@@ -152,19 +170,22 @@ def _mstep(
 
     # ----- Define the step function with weight update
 
-    loss_func = _mstep_loss(model)
+    step = jitted_step
+    if jitted_step is None:
+        step = construct_jitted_mstep(model, optimizer)
+    # loss_func = _mstep_loss(model)
 
-    @partial(jax.jit, static_argnums = (3,))
-    def step(opt_state, params, emissions, hyperparams, aux_pdf, term_weights):
-        loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
-            params, emissions, hyperparams, aux_pdf, term_weights)
-        updates, opt_state = optimizer.update(grads, opt_state, params)
-        if morph_bias is not None:
-            updates = joint_model.JointParameters(
-                posespace = updates.posespace,
-                morph = _scale_updates(updates.morph, morph_bias))
-        params = optax.apply_updates(params, updates)
-        return params, opt_state, loss_value
+    # @partial(jax.jit, static_argnums = (3,))
+    # def step(opt_state, params, emissions, hyperparams, aux_pdf, term_weights):
+    #     loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
+    #         params, emissions, hyperparams, aux_pdf, term_weights)
+    #     updates, opt_state = optimizer.update(grads, opt_state, params)
+    #     if morph_bias is not None:
+    #         updates = joint_model.JointParameters(
+    #             posespace = updates.posespace,
+    #             morph = _scale_updates(updates.morph, morph_bias))
+    #     params = optax.apply_updates(params, updates)
+    #     return params, opt_state, loss_value
 
     # ----- Set up variables for iteration
 
@@ -211,7 +232,6 @@ def iterate_em(
     mstep_progress = False,
     mstep_tol: float = None,
     mstep_stop_window: int = 10,
-    mstep_morph_bias: float = None,
     return_mstep_losses = False,
     return_param_hist = False
     ) -> Tuple[
@@ -230,6 +250,9 @@ def iterate_em(
     if return_param_hist:
         param_hist = [curr_params]
 
+    optimizer = optax.adam(learning_rate = mstep_learning_rate)
+    jitted_mstep = construct_jitted_mstep(model, optimizer)
+
     for step_i in iter:
         aux_pdf, term_weights = _estep(
             model = model,
@@ -244,13 +267,13 @@ def iterate_em(
             term_weights = term_weights,
             emissions = emissions,
             hyperparams = hyperparams,
-            optimizer = optax.adam(learning_rate=mstep_learning_rate),
+            optimizer = optimizer,
             n_steps = mstep_n_steps,
             log_every = mstep_log_every,
             progress = mstep_progress,
             tol = mstep_tol,
             stop_window = mstep_stop_window,
-            morph_bias = mstep_morph_bias
+            jitted_step = jitted_mstep
         )
         loss_hist[step_i] = loss_hist_mstep[-1]
         curr_params = fit_params_mstep

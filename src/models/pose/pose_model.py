@@ -113,6 +113,7 @@ def objective(
     posespace_model: PoseSpaceModel,
     observations: Observations,
     query_morph_matrix: Float[Array, "N KD M"],
+    query_morph_ofs: Float[Array, "N KD M"],
     query_params: PoseSpaceParameters,
     hyperparams: PoseSpaceHyperparams,
     aux_pdf: EMAuxPDF,
@@ -127,7 +128,9 @@ def objective(
     # ----- Compute terms of the objective function
 
     model_log_exp: Float[Array, "Nt L"] = posespace_model.logprob_expectations(
-        observations, query_morph_matrix, query_params, hyperparams, aux_pdf
+        observations,
+        query_morph_matrix, query_morph_ofs,
+        query_params, hyperparams, aux_pdf
     )
     common_logprob_expect: Float[Array, "Nt L"] = common_logprob_expectations(
         observations,

@@ -46,11 +46,12 @@ def sample(
         T
     )
 
-    morph_matrix = model.morph.get_transform(morph_params, hyperparams.morph)
+    morph_matrix, morph_ofs = model.morph.get_transform(
+        morph_params, hyperparams.morph)
     obs = pose.Observations(
         keypts = (
-            morph_matrix[subject_ids] @ pose_latents.poses[..., None]
-        )[..., 0],
+            morph_matrix[subject_ids] @  pose_latents.poses[..., None]
+        )[..., 0] + morph_ofs[subject_ids],
         subject_ids = subject_ids
     )
 

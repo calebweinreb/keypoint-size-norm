@@ -9,7 +9,7 @@ def plot_subjectwise_scalar_comparison(
     ax,
     scalars: Float[Array, "n_subject 2"],
     labels: Tuple[str],
-    pal: Tuple = ('.5', '.3')
+    pal: Tuple = ('.5', '.3'),
     ):
     n_subject = len(scalars)
     ax.bar(
@@ -42,13 +42,72 @@ def plot_subjectwise_scalar_comparison(
 def plot_paired_vectors(
     ax,
     dims: Float[Array, "2 2"],
-    artist_kws
+    origins: Float[Array, "2 2"] = np.zeros([2, 2]),
+    artist_kws = {},
+    display_scale = 1,
     ):
     for i in range(2):
         ax[i].arrow(
-            0, 0, dims[i, 0], dims[i, 1],
+            origins[i, 0], origins[i, 1], 
+            display_scale * (dims[i, 0] - origins[i, 0]), 
+            display_scale * (dims[i, 1] - origins[i, 1]),
             length_includes_head = True,
             **artist_kws)
+
+def plot_morph_action(
+    ax,
+    morph_model,
+    morph_hyperparams,
+    morph_params,
+    vectors: Float[Array, "morph_in_dim n_vector"],
+    display_scale = 1):
+    """Display input-output mapping of a morph on given vectors."""
+    morph_matrix, morph_ofs = morph_model.get_transform(
+        morph_params, morph_hyperparams)
+    morphed = ( # (n_subj, morph_out_dim, n_vector)
+        (morph_matrix @ # (n_subj, morph_out_dim, morph_in_dim)
+         vectors[None]) # (1, morph_in_dim, n_vector)
+       + morph_ofs[..., None] # (n_subj, morph_out_dim, 1)
+    )
+    n_vector = vectors.shape[1]
+    for i_subj in range(morph_hyperparams.N):
+        for i_vector, ls, col in zip(
+                range(min(n_vector, 2)),
+                ['-', '-'],
+                ['.4', '.6']
+                ):
+            plot_paired_vectors(
+                ax[:, i_subj],
+                jnp.stack([
+                    morphed[i_subj, :, i_vector],
+                    vectors[:, i_vector]
+                ], axis = 0),
+                origins = jnp.stack([
+                    morph_ofs[i_subj],
+                    jnp.zeros(2),
+                ]),
+                artist_kws = dict(
+                    lw = 1, head_width = 0.6, head_length = 0.6,
+                     color = col, ls = ls),
+                display_scale = display_scale
+            )
+        ax[0, i_subj].plot(
+            [morph_ofs[i_subj, 0]], [morph_ofs[i_subj, 1]],
+            'ko', ms = 3)
+        ax[1, i_subj].plot([0], [0], 'ko', ms = 3)
+
+
+def plot_morph_action_standard_basis(
+    ax,
+    morph_model,
+    morph_hyperparams,
+    morph_params,
+    display_scale = 1,
+    ):
+    plot_morph_action(ax, morph_model, morph_hyperparams, morph_params,
+                      jnp.eye(2), display_scale)
+
+
 
 def plot_morph_dimensions(
     ax,

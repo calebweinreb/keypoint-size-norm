@@ -16,6 +16,7 @@ class ScalarMorphParameters(NamedTuple):
     :param M: Pose space dimension.
     """
     scale_log: Float[Array, "N"]
+    offsets: Float[Array, "N M"]
 
 
 class ScalarMorphHyperparams(NamedTuple):
@@ -48,13 +49,14 @@ def get_transform(
     return (
         jnp.eye(hyperparams.M)[None] *
         jnp.exp(params.scale_log)[:, None, None]
-    )
+    ), params.offsets
 
 
 def sample_parameters(
     rkey: PRNGKey,
     hyperparams: ScalarMorphHyperparams,
     log_std: Scalar,
+    offset_std: Scalar
     ) -> ScalarMorphParameters:
     """
     Sample a set of `ScalarMorphParameters`.
@@ -68,9 +70,12 @@ def sample_parameters(
     :param hyperparams: Hyperparameters of the resulting morph model.
     :param log_std: Standard deviation of log scale factors.
     """
+    rkey = jr.split(rkey, 2)
     return ScalarMorphParameters(
-        scale_log = log_std * jr.normal(rkey,
-            shape = (hyperparams.N,))
+        scale_log = log_std * jr.normal(rkey[0],
+            shape = (hyperparams.N,)),
+        offsets = offset_std * jr.normal(rkey[1],
+            shape = (hyperparams.N, hyperparams.M))
     )
 
 def init(
@@ -83,10 +88,9 @@ def init(
     Initialize `ScalarMorphParameters` and pose latents
     """
     # ref_keypts = observations.unstack(observations.keypts)[reference_subject]
-    # pca = pca.fit(ref_keypts)
     return ScalarMorphParameters(
-        scale_log = jnp.zeros(hyperparams.N)
-        # pca.pcs()[:hyperparams.L, :]
+        scale_log = jnp.zeros(hyperparams.N),
+        offsets = jnp.zeros([hyperparams.N, hyperparams.M])
     )
 
 

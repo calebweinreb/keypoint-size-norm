@@ -97,6 +97,7 @@ class GMMAuxPDF(NamedTuple):
 def aux_distribution(
     observations: Observations,
     morph_matrix: Float[Array, "N KD M"],
+    morph_ofs: Float[Array, "N M"],
     params: GMMParameters,
     hyperparams: GMMHyperparams,
     morph_inv: Float[Array, "N M KD"] = None,
@@ -116,9 +117,10 @@ def aux_distribution(
         observations: Observations from combined model.
         morph_matrix: Subject-wise linear transform from poses to
             keypoints.
+        morph_ofs: Subject-wise affine component of transform from
+            poses to keypoints.
         params, hyperparams: Parameters of the mixture model.
 
-    
     Returns:
         consts: Array of proportionality constants.
         helpers: Helper values for the distribution.
@@ -135,9 +137,10 @@ def aux_distribution(
     ps_mean, ps_cov, ps_cov_inv, normalizer = linear_transform_gaussian(
         query_point = observations.keypts, # (Nt, KD)
         cov = hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
+        cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
         A = morph_matrix[observations.subject_ids], # (Nt, KD, M)
         Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
-        cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
+        d = morph_ofs[observations.subject_ids], # (Nt, M) 
         return_cov_inv = True,
         return_normalizer = True
     )
@@ -187,22 +190,23 @@ def discrete_prob(
 def logprob_expectations(
     observations: Observations,
     morph_matrix: Float[Array, "N KD M"],
+    morph_ofs: Float[Array, "N M"],
     query_params: GMMParameters,
     hyperparams: GMMHyperparams,
     aux_pdf: GMMAuxPDF,
     morph_inv: Float[Array, "N M KD"] = None,
-    posespace_keypts: Float[Array, "Nt M"] = None,
-    posespace_cov_inv: Float[Array, "N M M"] = None,
     ) -> Float[Array, "Nt L"]:
     """
-    int_x s(x) log N(x; y) and int_x s(x) log F(x)
+    Compute
+        int_x s(x) log N(x; y) and int_x s(x) log F(x)
     as well as:
-        non-x-sensitive terms from F
-    funky terms from swapping x, y in N() do not care what pose space
+        terms from F constant in x (included in int_x s(x) log F(x))
+    
+    terms from swapping x, y in N() do not care what pose space
     model is being used and so will be dealt with elsewhere.
 
     Args:
-        morph_inv: Used only to caluclate posespace_keypts.
+        morph_inv: Avoid recalculating inverse if precomputed elsewhere
     """
 
     # ----- Fill out optionally precomputed terms
@@ -212,15 +216,23 @@ def logprob_expectations(
 
 
     # Compute distribution in pose space including observation noise
+    # This yields (the mean and covariance of) a normal distribution over pose
+    # space, the log PDF of which will be integrated against the auxiliary
+    # distribution.
+    # Note that since we calculate the log PDF explicitly here (later, in
+    # normal_quadform_expectation) instead of calculating the normal PDF itself,
+    # we do not use the normalizer term from linear_transform_gaussian which is
+    # used to correct for the new covariance of the resulting normal PDF.
     KD: int = morph_matrix.shape[1]
-    ps_mean, ps_cov, ps_cov_inv, normalizer = linear_transform_gaussian(
-        observations.keypts, # (Nt, KD)
-        hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
-        morph_matrix[observations.subject_ids], # (Nt, KD, M)
-        Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
+    ps_mean, ps_cov, ps_cov_inv = linear_transform_gaussian(
+        query_point = observations.keypts, # (Nt, KD)
+        cov = hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
         cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
+        A = morph_matrix[observations.subject_ids], # (Nt, KD, M)
+        Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
+        d = morph_ofs[observations.subject_ids], # (Nt, M)
         return_cov_inv = True,
-        return_normalizer = True
+        return_normalizer = False
     )
 
     # ----- Compute expectation terms

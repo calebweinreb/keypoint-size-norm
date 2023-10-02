@@ -1,4 +1,4 @@
-from typing import NamedTuple, Protocol, Callable
+from typing import NamedTuple, Protocol, Callable, Tuple
 from jaxtyping import Array, Float
 import jax.numpy as jnp
 
@@ -25,7 +25,7 @@ class MorphModel(NamedTuple):
     sample_parameters: Callable[..., MorphParameters]
     get_transform: Callable[
         [MorphParameters, MorphHyperparams],
-        Float[Array, "N KD M"]]
+        Tuple[Float[Array, "N KD M"], Float[Array, "N M"]]]
     init: Callable[..., MorphParameters]
 
     def pose_mle(
@@ -34,8 +34,8 @@ class MorphModel(NamedTuple):
         params: MorphParameters,
         hyperparams: MorphHyperparams
         ) -> Float[Array, "Nt M"]:
-        C = self.get_transform(params, hyperparams)
+        C, d = self.get_transform(params, hyperparams)
         Cinv = jnp.linalg.inv(C)[observations.subject_ids]
-        return (Cinv @ observations.keypts[..., None])[..., 0]
-        
+        d = d[observations.subject_ids]
+        return (Cinv @ (observations.keypts - d)[..., None])[..., 0]
     

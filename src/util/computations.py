@@ -209,15 +209,30 @@ def linear_transform_gaussian(
     query_point: Float[Array, "*#K M"],
     cov: Float[Array, "*#K M M"],
     A: Float[Array, "*#K M M"],
+    d: Float[Array, "*#K M"] = None,
     Ainv: Float[Array, "*#K M M"] = None,
     cov_inv: Float[Array, "*#K M M"] = None,
     return_cov_inv = False,
     return_normalizer = False,
     ) -> Tuple[Float[Array, "*#K M"], Float[Array, "*#K M M"]]:
+    """
+    Precompute the necessary values for $f(x)$ to be computed as a normal PDF
+    in $x$:
+    f(x) = N(query_point | A(x - d), cov)
+         = normalizer * N(x | Ainv @ query_point + d, Ainv @ cov @ Ainv^T)
+
+    In particular:
+    new_mean = Ainv @ query_point + d
+    new_cov = Ainv @ cov @ Ainv^T
+    normalizer = |cov| / |Ainv @ cov @ Ainv^T|
+    """
     
     if Ainv is None: Ainv = jnp.linalg.inv(A)
 
-    new_mean = (Ainv @ query_point[..., None])[..., 0]
+    if d is not None:
+        new_mean = (Ainv @ (query_point - d)[..., None])[..., 0]
+    else:
+        new_mean = (Ainv @ query_point[..., None])[..., 0]
     new_cov = Ainv @ cov @ jnp.swapaxes(Ainv, -2, -1)
     
     if return_cov_inv:
