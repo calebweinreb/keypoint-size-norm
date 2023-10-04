@@ -4,6 +4,7 @@ import numpy as np
 import jax.random as jr
 import jax.numpy as jnp
 import jax.numpy.linalg as jla
+import jax
 import scipy.stats
 
 from .morph_model import MorphModel
@@ -151,9 +152,9 @@ def log_prior(
     avg_offset_sqnorm = -((params.offsets.mean(axis = 0)) ** 2).sum() / 2
     avg_scale_sqnorm = -(params.uniform_scale.mean() ** 2) / 2
 
-    # Logpdf of N(0, 1) evaluated at moode norms
+    # Logpdf of N(0, 1) evaluated at mode log-norms
     mode_norms = jnp.linalg.norm(params.modes, axis = 0) # (L,)
-    mode_logpdf = -(mode_norms ** 2).sum() / 2
+    mode_logpdf = -(jnp.log(mode_norms) ** 2).sum() / 2
 
     # Logpdf of N(0, update_scale * I) evaluated at each
     # (normalized) update vector

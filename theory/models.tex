@@ -354,7 +354,7 @@ Before introducing spatially nonlinear morphs, we begin by working with a simple
 \textbf{Priors}\quad As will be standard for most morph models, we define a prior to remove ambiguity both in the offsets $\mu_n$ and the scale parameters $\alpha_n$. In particular, if $\bar{\mu}(\phi)$, $\bar{\alpha}(\phi)$ are the average offset $\EE_n\bc{\mu_n(\phi)}$ and log-scale, respectively, then the prior on $\phi$ for the scalar morph is
 \begin{align}
     L_{\text{morph}}(\phi) &= \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} \\
-    &= \frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 + \frac{1}{2}\bar{\alpha}(\phi)^2
+    &= -\frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 - \frac{1}{2}\bar{\alpha}(\phi)^2
     \label{eq:d-alpha-prior}
 \end{align}
 
@@ -394,10 +394,11 @@ The action of $C(\phi_n)$ on the orthogonal complement of $U$ should then be the
 \end{align}
 with $U^+$ being the Moore-Penrose pseudoinverse of U.
 
-\textbf{Priors}\quad We inherit the normal priors on the average offset and log-scale to remove ambiguity in $\mu_n$ and $\alpha_n$ as in Eq. \ref{eq:d-alpha-prior}. In addition, we include a Gaussian prior on the mode adjustments, the columns of the matrix $\hat{U}_n$ which we call $u_{n,l}$,  after scaling by the norm of the corresponding mode $u_l$, the $l$-th column of the matrix $U$, according to a scale hyperparameter $\upsilon$. We therefore arrive at the following morph parameter log likelihood function:
+\textbf{Priors}\quad We inherit the normal priors on the average offset and log-scale to remove ambiguity in $\mu_n$ and $\alpha_n$ as in Eq. \ref{eq:d-alpha-prior}. In addition, we include a Gaussian prior on the mode adjustments, the columns of the matrix $\hat{U}_n$ which we call $u_{n,l}$,  after scaling by the norm of the corresponding mode $u_l$, the $l$-th column of the matrix $U$, according to a scale hyperparameter $\upsilon$. Finally, we remove symmetry in $\norm{u_l}$ and arrive at the following morph parameter log likelihood function:
 \begin{align}
-    L_{\text{morph}}(\phi) &= \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} + \sum_{n,l=1}^{N,L}\log \NN(u_{n,l}, 0, \upsilon^2 I_{KD})\\
-    &= \frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 + \frac{1}{2}\bar{\alpha}(\phi)^2 + \frac{1}{2\upsilon^{2KD}}\sum_{n,l=1}^{N,L}\norm{u_{n, l}}_2^2 \norm{u_l}_2^{-2}
+    L_{\text{morph}}(\phi) =& \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} \\
+    &+ \sum_{n,l=1}^{N,L}\log \NN(u_{n,l}, 0, \upsilon^2 I_{KD}) + \sum_{l=1}^L \log\NN(\log \norm{u_l}, 0, 1)\\
+    &= -\frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 - \frac{1}{2}\bar{\alpha}(\phi)^2 - \frac{1}{2\upsilon^{2KD}}\sum_{n,l=1}^{N,L}\norm{u_{n, l}}_2^2 \norm{u_l}_2^{-2} - \frac{1}{2}\sum_{l=0}^1 \log^2 \norm{u_l}
 \end{align}
 
 
