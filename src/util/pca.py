@@ -109,18 +109,32 @@ class PCAData(NamedTuple):
     
     
 def fit(
-    data: Float[Array, "*#K n_samples n_feats"]
+    data: Float[Array, "*#K n_samples n_feats"],
+    centered: bool = False,
     ) -> PCAData:
-    u, s, vt = np.linalg.svd(data)
-    # coords for mean of data
-    # (..., n_components)
-    coord_directions = jnp.sign(
-        data.mean(axis = -2)[..., None, :] @ jnp.swapaxes(vt, -2, -1)
-    )[..., 0, :]
-    # flip PCs acoording to sign of mean coords
-    # (..., n_components, n_feats)
-    vt = coord_directions[..., :, None] * vt
-    return PCAData(u.shape[-2], np.array(s), jnp.array(jnp.swapaxes(vt, -2, -1)))
+    """
+    Parameters:
+        centered: boolean
+            Whether sample mean of the data is zero in all features.
+            If it is not, then components will be given a canonical
+            orientation (+/-) such that the mean of the data has positive
+            coordinates."""
+    cov = data.T @ data
+    _, s2, vt = np.linalg.svd(cov)
+
+    if not centered:
+        # coords for mean of data
+        # (..., n_components)
+        coord_directions = jnp.sign(
+            data.mean(axis = -2)[..., None, :] @ jnp.swapaxes(vt, -2, -1)
+        )[..., 0, :]
+        # flip PCs acoording to sign of mean coords
+        # (..., n_components, n_feats)
+        vt = coord_directions[..., :, None] * vt
+    return PCAData(
+        data.shape[-2],
+        np.sqrt(s2),
+        jnp.array(jnp.swapaxes(vt, -2, -1)))
 
 
 def second_moment(arr: Float[Array, "*#K n_samples n_feats"]):

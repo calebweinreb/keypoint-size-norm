@@ -114,7 +114,7 @@ def plot_morph_dimensions(
     morph_hyperparams,
     morph_model,
     morph_params, 
-    scale = 1
+    display_scale = 1
     ):
     """Display input-output mapping of a 2D affine-modal morph.
     
@@ -123,22 +123,10 @@ def plot_morph_dimensions(
     with the image plotted in the first row (keypoint space) and the
     morph mode plotted in the second row (pose space).
     """
-    morphed_modes = (
-        morph_model.get_transform(morph_params, morph_hyperparams) @
-        morph_params.modes[None]
-    )
-    for i_subj in range(morph_hyperparams.N):
-        for i_dim, ls, col in zip(
-                range(min(morph_params.modes.shape[1], 2)),
-                ['-', '--'],
-                ['.4', '.6']
-                ):
-            plot_paired_vectors(
-                ax[:, i_subj],
-                jnp.stack([
-                    scale * morphed_modes[i_subj, :, i_dim],
-                    scale * morph_params.modes[:, i_dim]
-                ], axis = 0),
-                dict(lw = 1, head_width = 0.6, head_length = 0.6,
-                     color = col, ls = ls)
-            )
+    plot_morph_action(
+        ax,
+        morph_model,
+        morph_hyperparams,
+        morph_params,
+        morph_params.modes,
+        display_scale)

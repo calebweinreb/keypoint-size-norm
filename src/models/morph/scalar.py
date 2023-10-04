@@ -83,20 +83,38 @@ def init(
     observations: Observations,
     reference_subject: int,
     seed: int = 0
-    ) -> Tuple[ScalarMorphParameters]:
+    ) -> ScalarMorphParameters:
     """
     Initialize `ScalarMorphParameters` and pose latents
     """
-    # ref_keypts = observations.unstack(observations.keypts)[reference_subject]
+    subjwise_keypts = observations.unstack(observations.keypts)
+    offsets = jnp.stack([
+        subj_kpts.mean(axis = 0) for subj_kpts in subjwise_keypts])
+    scales = jnp.stack([
+        (jnp.linalg.norm(subj_kpts - subj_ofs[None], axis = 1) ** 2).mean()
+        for subj_kpts, subj_ofs
+        in zip(subjwise_keypts, offsets)])
+    scales_log = jnp.log(scales) / 2
+    scales_log = scales_log - scales_log.mean()
     return ScalarMorphParameters(
-        scale_log = jnp.zeros(hyperparams.N),
-        offsets = jnp.zeros([hyperparams.N, hyperparams.M])
+        scale_log = scales_log,
+        offsets = offsets
     )
 
-
+def log_prior(
+    params: ScalarMorphParameters,
+    hyperparams: ScalarMorphHyperparams,
+    morph_matrix: Float[Array, "N KD M"] = None,
+    morph_ofs: Float[Array, "N KD"] = None
+    ):
+    avg_offset_norm = jnp.linalg.norm(params.offsets.mean(axis = 0)) ** 2
+    avg_scale_norm = params.scale_log.mean() ** 2
+    return avg_offset_norm #+ avg_scale_norm
+    
 
 ScalarMorph = MorphModel(
     sample_parameters = sample_parameters,
     get_transform = get_transform,
-    init = init
+    init = init,
+    log_prior = log_prior,
 )

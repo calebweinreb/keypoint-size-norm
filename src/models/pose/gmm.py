@@ -360,6 +360,7 @@ def sample(
 def init_parameters_and_latents(
     hyperparams: GMMHyperparams,
     observations: Observations,
+    poses: Float[Array, "Nt M"],
     reference_subject: int,
     seed: int = 0,
     count_eps: float = 1e-3
@@ -392,15 +393,15 @@ def init_parameters_and_latents(
     """
 
     # fit GMM to reference subject
-    init_pts = observations.unstack(observations.keypts)[reference_subject]
+    init_pts = observations.unstack(poses)[reference_subject]
     init_mix = mixture.GaussianMixture(
         n_components = hyperparams.L, 
         random_state = nr.RandomState(seed),
     ).fit(init_pts)
 
     # get component labels & counts across all subjects
-    init_components = jnp.array(observations.unstack(
-        init_mix.predict(observations.keypts))) # shape (N, T)
+    init_components = observations.unstack(
+        init_mix.predict(poses)) # List<subj>[(T,)]
     init_counts = np.zeros([hyperparams.N, hyperparams.L])
     for i_subj in range(hyperparams.N):
         uniq, count = np.unique(
@@ -433,6 +434,12 @@ def discrete_mle(
         poses = poses
     )
 
+def log_prior(
+    params: GMMParameters,
+    hyperparams: GMMHyperparams,
+    ):
+    return 0
+
 
 GMMPoseSpaceModel = PoseSpaceModel(
     discrete_mle = discrete_mle,
@@ -441,6 +448,7 @@ GMMPoseSpaceModel = PoseSpaceModel(
     logprob_expectations = logprob_expectations,
     discrete_prob = discrete_prob,
     aux_distribution = aux_distribution,
+    log_prior = log_prior,
     init = init_parameters_and_latents
 )
 

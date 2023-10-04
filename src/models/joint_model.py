@@ -67,3 +67,25 @@ def latent_mle(
         observations, params.morph, hyperparams.morph)
     return model.posespace.discrete_mle(
         poses, hyperparams.posespace, params.posespace)
+
+
+def init(
+    model: JointModel,
+    hyperparams: JointHyperparams,
+    observations: pose.Observations,
+    reference_subject: int,
+    seed: int = 0,
+    ) -> JointParameters:
+    morph_params = model.morph.init(
+        hyperparams.morph, observations, reference_subject, seed)
+    poses = model.morph.pose_mle(
+        observations, morph_params, hyperparams.morph)
+    posespace_params = model.posespace.init(
+        hyperparams.posespace,
+        observations,
+        poses,
+        reference_subject,
+        seed
+    )
+    return JointParameters(posespace_params, morph_params)
+    

@@ -98,7 +98,13 @@ def _mstep_objective(
     morph_matrix, morph_ofs = model.morph.get_transform(
         query_params.morph,
         hyperparams.morph)
+    
+    morph_prior = model.morph.log_prior(
+        query_params.morph,
+        hyperparams.morph
+    )
 
+    # return morph_prior
     return pose.objective(
         model.posespace,
         observations,
@@ -108,7 +114,7 @@ def _mstep_objective(
         hyperparams.posespace,
         aux_pdf,
         term_weights
-    )
+    ) + morph_prior
 
 
 def _mstep_loss(
@@ -171,7 +177,7 @@ def _mstep(
     # ----- Define the step function with weight update
 
     step = jitted_step
-    if jitted_step is None:
+    if step is None:
         step = construct_jitted_mstep(model, optimizer)
     # loss_func = _mstep_loss(model)
 
@@ -180,10 +186,6 @@ def _mstep(
     #     loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
     #         params, emissions, hyperparams, aux_pdf, term_weights)
     #     updates, opt_state = optimizer.update(grads, opt_state, params)
-    #     if morph_bias is not None:
-    #         updates = joint_model.JointParameters(
-    #             posespace = updates.posespace,
-    #             morph = _scale_updates(updates.morph, morph_bias))
     #     params = optax.apply_updates(params, updates)
     #     return params, opt_state, loss_value
 

@@ -99,13 +99,13 @@ Treating $z_t, x_t$ as latent variables, $\theta = (\pi, m_k, Q_k)$ as a paramet
 \subsection{Expectation maximization}
 \label{sec:em-general}
 
-In expectation maximization, jointly optimize the log likelihood $\ell(\theta)$ of a set of model parameters $\theta$ given observations $y$. In particular, we do so while taking the expectation over unknown values of some latent variables --- $z$ and $x$ in our case --- according to an auxiliary distribution $q(x, z | y, \theta^*) \propto P(x, z | y, \theta^*)$ for a current parameter estimate $\theta^*$. The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that taking this expectation produces a lower bound for the likelihood $\ell(\theta)$, namely
+In expectation maximization, jointly optimize the log likelihood $\ell(\theta)$ of a set of model parameters $\theta$ given observations $y$. In particular, we do so while taking the expectation over unknown values of some latent variables --- $z$ and $x$ in our case --- according to an auxiliary distribution $q(x, z | y, \theta^*) \propto P(x, z | y, \theta^*)$ for a current parameter estimate $\theta^*$. The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that taking this expectation produces a lower bound for the likelihood $\ell(\theta)$. Namely, given a prior $P(\theta)$,
 \begin{align}
-    \ell(\theta) \geq A(\theta, \theta^*) := \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta)
+    \ell(\theta) \geq A(\theta, \theta^*) := \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) + \log P(\theta)
 \end{align}
 The expectation maximization algorithm splits the problem of iteratively optimizing $\ell$ into two blocks: in the E-step we will calculate $q$ using our current parameter estimates $\theta^*$, so that in the M-step we can calculate $\argmax_\theta A(\theta, \theta^*)$ to arrive at new parameter estimates $\theta^*_{\text{new}}$,
 \begin{align}
-    \theta^*_{\text{new}} := \argmax_{\theta} \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) \label{eq:em-argmax}
+    \theta^*_{\text{new}} := \argmax_{\theta} \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) + \log P(\theta)\label{eq:em-argmax}
 \end{align}
 The key theoretical guarantee is that the new parameter estimates monotonically increase in likelihood, that is $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$.
 
@@ -127,7 +127,7 @@ We will then aim to compute this expression for $q_t$ analytically for each mode
 
 Rewriting Eq. \ref{eq:em-argmax} using timepoint independence and expanding the expectation from Eq. \ref{eq:em-argmax}, we arrive at the formula that will be the basis for deriving each model's M-step.
 \begin{align}
-    \theta^*_{\text{new}} := \argmax_{\theta} \sum_t \sum_{z} \int q_t(x, z)\, \log P(y_t, x, z | \theta) \; dx \label{eq:em-int-argmax}
+    \theta^*_{\text{new}} := \argmax_{\theta} \sum_t \sum_{z} \int q_t(x, z)\, \log P(y_t, x, z | \theta) \; dx + \log P(\theta)\label{eq:em-int-argmax}
 \end{align}
 The main requirement to enable numerical computation and differentiation of $\theta^*_{\text{new}}$ will be to evaluate the integral in $x$. 
 
@@ -280,7 +280,7 @@ Pose space models will in general support a discrete state $z$ whose distributio
 \end{align}
 Each morph model must simply compute the affine transformation specified by $C_n, d_n$, while most of the heavily lifting is left to the pose space models.
 The full models therefore function on an extended parameter set $\theta_C = (\theta, C(\phi), d(\phi))$. When parameters for only one subject are needed, we will
-denote this as $\theta_{C,n} = (\pi_n, \psi, R, C_n(\phi), d(\phi))$.
+denote this as $\theta_{C,n} = (\pi_n, \psi, R, C_n(\phi), d_n(\phi))$. In addition, we consider a log-prior defined separately for parameters of the pose and morph models $\log P(\theta) = L_{\text{pose}}(\pi, \phi, R) + L_{\text{morph}}(\phi)$. 
 
 Each pose space model is responsible for computing the objective function that the M-step seeks to maximize, given the collection of linear transformations output by the morph model, in terms of an auxiliary distribution over the latents, $q_t(x, z)$:
 \begin{align}
@@ -349,37 +349,56 @@ Additionally, for $x,y,z$ in $\RR^N$ and $B\in\RR^{N\times N}$, $\NN(x - z \mid 
 
 \subsection{Scalar morph}
 
-Before introducing spatially nonlinear morphs, we begin by working with $C_n(\phi) = e^{\phi_n} I_{KD}$, letting the morph model be parameterized by a vector $\phi \in \RR^N$. Latent pose space dimension cannot compress keypoint space using a scalar morph, so $M = KD$.
+Before introducing spatially nonlinear morphs, we begin by working with a simple uniform scale around an affine offset. Letting the morph model be parameterized by scalars $\alpha_n$ and offsets $\mu_n\in \RR^N$, we take $C_n(\phi) = e^{\alpha_n} I_{KD}$, and $d_n(\phi) = \mu_n$. Using this scalar morph the latent pose space dimension cannot compress keypoint space, so $M = KD$.
+
+\textbf{Priors}\quad As will be standard for most morph models, we define a prior to remove ambiguity both in the offsets $\mu_n$ and the scale parameters $\alpha_n$. In particular, if $\bar{\mu}(\phi)$, $\bar{\alpha}(\phi)$ are the average offset $\EE_n\bc{\mu_n(\phi)}$ and log-scale, respectively, then the prior on $\phi$ for the scalar morph is
+\begin{align}
+    L_{\text{morph}}(\phi) &= \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} \\
+    &= \frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 + \frac{1}{2}\bar{\alpha}(\phi)^2
+    \label{eq:d-alpha-prior}
+\end{align}
+
+\textbf{Initialization}\quad We initialize offsets to the subject-wise mean in keypoint space $\mu_n = \EE_t[y^t_n]$ and log-scale factors to the MLE of standard deviation for a spherical Gaussian centered at $\mu_n$ given the subject's keypoint data, $\alpha_n = \frac{1}{2}\log\EE_t[\norm{y^t_n - \mu_n}_2^2]$
 
 \subsection{Affine modal rotation}
 
 The first (dare I say ...only?) non-rigid morph we will consider is an affine linear transform which rotates a limited number of dimensions around a centroid. We now define this morph model and derive the required terms to implement it in the mix-and-match fitting framework.
 
-Let $L$ be an integer d.o.f. hyperparameter giving the number of axes to be rotated, and define the subject-wise parameter tuple $\phi_n = (\alpha_n, s_n, U, \hat{U}_n, \mu_n)$
+Let $L$ be an integer d.o.f. hyperparameter giving the number of axes to be rotated. In this case, we define the morph model in terms of the following parameters
 \begin{itemize}
-    \item $\alpha\in\RR$ - subject-wise uniform scale factor to be applied to all dimensions of pose space.
-    \item $s_n \in \RR^L$ - subject-wise scale factor for each morph dimension.
+    \item $\bar\alpha\in\RR$ - log of the subject-wise uniform scale factor $\alpha = e^{\bar{\alpha}}$ to be applied to all dimensions of pose space
     \item $U\in \RR^{KD\times L}$ - matrix whose columns give the population-wide dimensions to be morphed. \textit{The ``PC modal rotation'' morph is the special case where the columns of $U$ are the first $L$ principal components and considered a hyperparameter instead of being learned}.
-    \item $\hat{U}_n\in\RR^{KD \times L}$ - matrix whose columns give subject-wise updates to the morph dimensions.
+    \item $\hat{U}_n\in\RR^{KD \times L}$ - matrix whose columns, $\hat{u_{n, l}}$, give subject-wise updates to the morph dimensions.
     \item $\mu_n\in \RR^{KD}$ - center of the affine transform, so that $d_n(\phi) = \mu_n$. 
 \end{itemize}
 
-In practice the morph is parameterized according to an unnormalized $\tilde{U}$ and logarithms of $\alpha_n$ and $s_n$. Let $\bar{U}$ be the projection on to the orthogonal complement of $U$, which will be used as a pass-through for those dimensions of pose space that should be effected only by uniform scaling.
-
-To understand the action of the morph, consider the $L=2$ case in which the columns of $U$, which we call $u_1$ and $u_2$, are orthonormal. Let $\hat{u}_1, \hat{u}_2$ be the updates to the morph dimensions for subject $n$. Then the action of $C(\phi_n)$ on $\text{span}(u_1, u_2)$ - the subspace spanned by the morph dimensions - is a perturbation of the diagonal matrix with SVD $U\text{diag}(\alpha s_n) U^T$, namely
+Let $\bar{U}$ be the projection on to the orthogonal complement of $U$, which will be used as a pass-through for those dimensions of pose space that should be effected only by uniform scaling. Using these parameters, the modal rotation morph is the affine map given by the matrix $C_n(\phi)$ and the vector $d_n(\phi)$:
 \begin{align}
-    C(\phi_n) : x\in \text{span(U)} \mapsto \bc{\mat{ | & | \\ \frac{u_1 + \hat{u}_1}{\norm{u_1 + \hat{u}_1}} & \frac{u_2 + \hat{u}_2}{\norm{u_2 + \hat{u}_2}} \\ | & |  }}
-    \bc{\mat{ \alpha s_1 & \\ & \alpha s_2 }}
+    C_n(\phi) &= \alpha \bc{ \bar{U} + \pn{U + \hat{U}_n}U^+ } &\text{\ with\ } \phi &= (U, \bar\alpha_n, \hat{U}_n, \mu_n,\ n\in1...N)
+    \\
+    d(\phi_n) &= \mu_n & \alpha_n &= \exp\pn{\bar\alpha_n}
+    \\
+    && \hat{u}_{n, l} &= (\hat{U}_{n})_{:,l} \sim \NN(0, \upsilon^2 I_{KD}) 
+\end{align}
+
+
+To understand the action of the morph, consider the $L=2$ case in which the columns of $U$, which we call $u_1$ and $u_2$, are orthonormal. Let $\hat{u}_1, \hat{u}_2$ be the updates to the morph dimensions for subject $n$. Then the action of $C(\phi_n)$ on $\text{span}(u_1, u_2)$ - the subspace spanned by the morph dimensions - is a perturbation of the symmetric matrix with SVD $U (\alpha I_{KD}) U^T$, namely
+\begin{align}
+    C(\phi_n) : x\in \text{span(U)} \mapsto \bc{\mat{ | & | \\ u_1 + \hat{u}_1 & u_2 + \hat{u}_2 \\ | & |  }}
+    \bc{\mat{ \alpha & \\ & \alpha }}
     \bc{\mat{ - & u_1^T & - \\ - & u_2^T & -}}x
 \end{align}
-The action of $C(\phi_n)$ on the orthogonal complement of $U$ should then be the identity. We normalize the columns of the leftmost matrix to separate priors on rotation and scaling. Removing the requirement of orthogonal of the morph dimensions, we have the general expression:
+The action of $C(\phi_n)$ on the orthogonal complement of $U$ should then be the identity. Removing the requirement of orthogonal morph dimensions, and considering vectors outside the span of those morph dimensions, we have the general expression:
 \begin{align}
     C(\phi_n) = \alpha \bc{ \bar{U} + \pn{U + \hat{U}_n}\text{Diag}\pn{s_n}U^+ }
 \end{align}
 with $U^+$ being the Moore-Penrose pseudoinverse of U.
 
-
-
+\textbf{Priors}\quad We inherit the normal priors on the average offset and log-scale to remove ambiguity in $\mu_n$ and $\alpha_n$ as in Eq. \ref{eq:d-alpha-prior}. In addition, we include a normal prior on the mode adjustments, the columns of the matrix $\hat{U}_n$, which we call $u_{n,l}$, according to a scale hyperparameter $\upsilon$
+\begin{align}
+    L_{\text{morph}}(\phi) &= \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} + \sum_{n,l=1}^{N,L}\log \NN(u_{n,l}, 0, \upsilon^2 I_{KD})\\
+    &= \frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 + \frac{1}{2}\bar{\alpha}(\phi)^2 + \frac{1}{2\upsilon^{2KD}}\sum_{n,l=1}^{N,L}\norm{u_{n, l}}_2^2
+\end{align}
 
 
 
@@ -388,10 +407,12 @@ with $U^+$ being the Moore-Penrose pseudoinverse of U.
 
 \subsection{Gaussian mixture}
 
-In the Gaussian mixture model, our discrete pose state is categorical, and our continuous pose state is normal, with mean and covariance conditional on the discrete state:
+In the Gaussian mixture model, our discrete pose state is categorical with weights subject to a heirarchical Dirichlet prior with hyperparameters $\hat\gamma, \hat\beta$, and our continuous pose state is normal, with mean and covariance conditional on the discrete state.
 \begin{align*}
-    G_{\pi_n} &= \text{Cat}({\text{softmax}(\pi_n)}) & \text{with\ }&\pi_n \in \RR^L \\
-    F_{\psi\mid z} &= \NN(m_z, Q_z) & \text{with\ }&\psi = ((m_z, Q_z) \in \RR^{M} \times \RR^{M\times M}\ z\in 1 ... N)
+    G_{\pi_n} &= \text{Cat}(\beta_n) & \text{with\ }&\pi_n = ((\hat\beta_n, \hat\gamma_n)\in \RR^L\times \RR^L,\ n\in1...N) \\
+    &&& \gamma_n = \text{softmax}(\hat\gamma_n),\ \gamma_n \sim \text{Dir}(\hat\gamma) \\
+    &&& \beta_n = \text{softmax}(\hat\beta_n),\ \beta_n \sim \text{Dir}(\hat\beta\;\gamma_n) \\
+    F_{\psi\mid z} &= \NN(m_z, Q_z) & \text{with\ }&\psi = ((m_z, Q_z) \in \RR^{M} \times \RR^{M\times M},\ z\in 1 ... L)
 \end{align*}
 
 Our task is to rewrite the product of $F$ and a normal PDF as in Eq. \ref{eq:norm-F-prod}, as a constant $K$ times a distribution $s$, as in Eq. \ref{eq:s-defn}. Since $F$ is normal here, the product is itself proportional to a normal PDF, and the following proposition specifies the proportionality constant.
@@ -435,6 +456,19 @@ The proof is left to the reader, but is achieved by wrapping the whole expectati
     \item The expectation in $s$ of the quadratic form from Eq. \ref{eq:cn-swap} is given by the proposition, scaled by $-\frac{1}{2}$
     \item The expectation in $s$ of $\log F$ splits into two terms. First, we have the expectation of the quadratic form $-\frac{1}{2}\norm{x - m_z}^2_{Q_z}$, which is again given by the scaled result of the composition. Additionally, there is a term $\log Z_{Q_z} = -\frac{1}{2}\log\abs{Q_z}$ which is constant in $x$ and so is its own expectation.
 \end{itemize}
+
+\textbf{Priors}\quad We impose a heirarchical Dirichlet prior on the component weights $\pi_n$, but we do not constrain the parameters of the component distributions $m_z, Q_z$. Also, to remove ambiguity in the logits $\hat\beta_n, \hat\gamma_n$ we add normal priors on their means. This results in the following log-prior for the Gaussian mixture pose model:
+\begin{align}
+    L_{\text{morph}}(\pi_n) =& \sum_n \log\text{Dir}(\beta_n \mid \hat\beta\;\gamma_n) + \sum_n \log\text{Dir}(\gamma_n\mid \hat\gamma) \\
+    &+ \log \NN\pn{\EE_n[\beta]\mid 0, I_1} + \NN\pn{\EE_n[\gamma]\mid 0, I_1}
+\end{align}
+
+\textbf{Initialization}\quad We initialize the Gaussian mixture pose space model based on a standard Gaussian mixture model (GMM) fit to pose space data from a reference subject $\hat{n}$. Specifically, given parameters for a morph model, $\phi$, we form the dataset of pose space points $\cb{C_{\hat{n}}(\phi) y^t_n + d_{\hat{n}}(\phi)}_t$ and fit a GMM in $L$ components, yielding means $\hat{m}_z$, covariances $\hat{Q}_z$ and cluster weights $\hat\pi_z$. From these we may construct initialization parameters $\pi$ and $\psi$ as
+\begin{itemize}
+    \item Component means and covariances of the pose space model are directly inherited from the reference-subject GMM. That is, $m_z = \hat{m}_z$ and $Q_z = \hat{Q}_z$.
+    \item The heirarchical Dirichlet prior is initialized so that $\beta_{n, z} = \hat{\pi}_z$. We take the component weight logits as $\hat\beta_n = \log \hat\pi_z$ and take $\hat\gamma = \log \hat\pi_z$ so that the initial $\beta_n$'s are the mean of their generating distribution, i.e. $\EE[\text{Dir}(\hat\beta \gamma)] = \beta_n$.
+\end{itemize}
+
 
 \label{full-model-derivation}
 \section{Optimizing the mixture of linear Gaussians}

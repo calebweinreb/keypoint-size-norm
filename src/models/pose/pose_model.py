@@ -86,6 +86,9 @@ class PoseSpaceModel(NamedTuple):
     logprob_expectations: Callable[..., Float[Array, "Nt L"]]
     discrete_prob: Callable[..., Float[Array, "N L"]]
     aux_distribution: Callable[..., EMAuxPDF]
+    log_prior: Callable[
+        [PoseSpaceParameters, PoseSpaceHyperparams], 
+        Scalar]
     init: Callable[..., Tuple[PoseSpaceParameters]]
 
 
@@ -137,7 +140,10 @@ def objective(
         posespace_model.discrete_prob(query_params, hyperparams)
     )
 
+    log_prior: Scalar = posespace_model.log_prior(
+        query_params, hyperparams)
+
     # ----- Sum terms and return
     return (
         term_weights * (model_log_exp + common_logprob_expect)
-    ).sum()
+    ).sum() + log_prior

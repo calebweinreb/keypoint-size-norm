@@ -1,5 +1,5 @@
-from typing import NamedTuple, Protocol, Callable, Tuple
-from jaxtyping import Array, Float
+from typing import NamedTuple, Protocol, Callable, Tuple, Optional
+from jaxtyping import Array, Float, Scalar
 import jax.numpy as jnp
 
 from ..pose import Observations
@@ -25,7 +25,11 @@ class MorphModel(NamedTuple):
     sample_parameters: Callable[..., MorphParameters]
     get_transform: Callable[
         [MorphParameters, MorphHyperparams],
-        Tuple[Float[Array, "N KD M"], Float[Array, "N M"]]]
+        Tuple[Float[Array, "N KD M"], Float[Array, "N KD"]]]
+    log_prior: Callable[
+        [MorphParameters, MorphHyperparams,
+         Optional[Float[Array, "N KD M"]], Optional[Float[Array, "N KD"]]],
+        Scalar]
     init: Callable[..., MorphParameters]
 
     def pose_mle(
