@@ -107,9 +107,9 @@ def log_prior(
     morph_matrix: Float[Array, "N KD M"] = None,
     morph_ofs: Float[Array, "N KD"] = None
     ):
-    avg_offset_norm = jnp.linalg.norm(params.offsets.mean(axis = 0)) ** 2
-    avg_scale_norm = params.scale_log.mean() ** 2
-    return avg_offset_norm #+ avg_scale_norm
+    avg_offset_sqnorm = -((params.offsets.mean(axis = 0)) ** 2).sum() / 2
+    avg_scale_sqnorm = -(params.uniform_scale.mean() ** 2) / 2
+    return avg_offset_sqnorm + avg_scale_sqnorm
     
 
 ScalarMorph = MorphModel(

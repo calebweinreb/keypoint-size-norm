@@ -394,10 +394,10 @@ The action of $C(\phi_n)$ on the orthogonal complement of $U$ should then be the
 \end{align}
 with $U^+$ being the Moore-Penrose pseudoinverse of U.
 
-\textbf{Priors}\quad We inherit the normal priors on the average offset and log-scale to remove ambiguity in $\mu_n$ and $\alpha_n$ as in Eq. \ref{eq:d-alpha-prior}. In addition, we include a normal prior on the mode adjustments, the columns of the matrix $\hat{U}_n$, which we call $u_{n,l}$, according to a scale hyperparameter $\upsilon$
+\textbf{Priors}\quad We inherit the normal priors on the average offset and log-scale to remove ambiguity in $\mu_n$ and $\alpha_n$ as in Eq. \ref{eq:d-alpha-prior}. In addition, we include a Gaussian prior on the mode adjustments, the columns of the matrix $\hat{U}_n$ which we call $u_{n,l}$,  after scaling by the norm of the corresponding mode $u_l$, the $l$-th column of the matrix $U$, according to a scale hyperparameter $\upsilon$. We therefore arrive at the following morph parameter log likelihood function:
 \begin{align}
     L_{\text{morph}}(\phi) &= \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} + \sum_{n,l=1}^{N,L}\log \NN(u_{n,l}, 0, \upsilon^2 I_{KD})\\
-    &= \frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 + \frac{1}{2}\bar{\alpha}(\phi)^2 + \frac{1}{2\upsilon^{2KD}}\sum_{n,l=1}^{N,L}\norm{u_{n, l}}_2^2
+    &= \frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 + \frac{1}{2}\bar{\alpha}(\phi)^2 + \frac{1}{2\upsilon^{2KD}}\sum_{n,l=1}^{N,L}\norm{u_{n, l}}_2^2 \norm{u_l}_2^{-2}
 \end{align}
 
 
@@ -409,9 +409,9 @@ with $U^+$ being the Moore-Penrose pseudoinverse of U.
 
 In the Gaussian mixture model, our discrete pose state is categorical with weights subject to a heirarchical Dirichlet prior with hyperparameters $\hat\gamma, \hat\beta$, and our continuous pose state is normal, with mean and covariance conditional on the discrete state.
 \begin{align*}
-    G_{\pi_n} &= \text{Cat}(\beta_n) & \text{with\ }&\pi_n = ((\hat\beta_n, \hat\gamma_n)\in \RR^L\times \RR^L,\ n\in1...N) \\
-    &&& \gamma_n = \text{softmax}(\hat\gamma_n),\ \gamma_n \sim \text{Dir}(\hat\gamma) \\
-    &&& \beta_n = \text{softmax}(\hat\beta_n),\ \beta_n \sim \text{Dir}(\hat\beta\;\gamma_n) \\
+    G_{\pi_n} &= \text{Cat}(\beta_n) & \text{with\ }&\pi_n = (\bar\gamma\in \RR^L, \bar\beta_n \in \RR^L,\ n\in1...N) \\
+    &&& \gamma = \text{softmax}(\bar\gamma),\ \gamma \sim \text{Dir}(\hat\gamma) \\
+    &&& \beta_n = \text{softmax}(\bar\beta_n),\ \beta_n \sim \text{Dir}(\hat\beta\;\gamma) \\
     F_{\psi\mid z} &= \NN(m_z, Q_z) & \text{with\ }&\psi = ((m_z, Q_z) \in \RR^{M} \times \RR^{M\times M},\ z\in 1 ... L)
 \end{align*}
 
@@ -459,14 +459,15 @@ The proof is left to the reader, but is achieved by wrapping the whole expectati
 
 \textbf{Priors}\quad We impose a heirarchical Dirichlet prior on the component weights $\pi_n$, but we do not constrain the parameters of the component distributions $m_z, Q_z$. Also, to remove ambiguity in the logits $\hat\beta_n, \hat\gamma_n$ we add normal priors on their means. This results in the following log-prior for the Gaussian mixture pose model:
 \begin{align}
-    L_{\text{morph}}(\pi_n) =& \sum_n \log\text{Dir}(\beta_n \mid \hat\beta\;\gamma_n) + \sum_n \log\text{Dir}(\gamma_n\mid \hat\gamma) \\
-    &+ \log \NN\pn{\EE_n[\beta]\mid 0, I_1} + \NN\pn{\EE_n[\gamma]\mid 0, I_1}
+    L_{\text{morph}}(\pi_n) =& \sum_n \log\text{Dir}(\beta_n \mid \hat\beta\;\gamma_n) + \log\text{Dir}(\gamma\mid \hat\gamma / L) \\
+    &+ \sum_{n=1}^N \log \NN\pn{\EE_l[\bar\beta_{n, l}]\mid 0, I_1} + \log\NN\pn{\EE_l[\bar\gamma_l]\mid 0, I_1}
 \end{align}
+Note that the hyperparameters $\hat\gamma$, $\hat\beta$ define the variation tolerable in the expected weight of each component and the variation tolerable from that mean respectively. In particular, $\EE[\gamma]$ is the discrete uniform over $L$ choices, with $\text{Var}[\gamma_l]$ inversely proportional to $\hat\gamma + 1$. Moreover, $\EE[\beta_n] = \gamma$ with $\text{Var}[\beta_{n, l}]$ inversely proportional to $\hat\beta + 1$.
 
 \textbf{Initialization}\quad We initialize the Gaussian mixture pose space model based on a standard Gaussian mixture model (GMM) fit to pose space data from a reference subject $\hat{n}$. Specifically, given parameters for a morph model, $\phi$, we form the dataset of pose space points $\cb{C_{\hat{n}}(\phi) y^t_n + d_{\hat{n}}(\phi)}_t$ and fit a GMM in $L$ components, yielding means $\hat{m}_z$, covariances $\hat{Q}_z$ and cluster weights $\hat\pi_z$. From these we may construct initialization parameters $\pi$ and $\psi$ as
 \begin{itemize}
     \item Component means and covariances of the pose space model are directly inherited from the reference-subject GMM. That is, $m_z = \hat{m}_z$ and $Q_z = \hat{Q}_z$.
-    \item The heirarchical Dirichlet prior is initialized so that $\beta_{n, z} = \hat{\pi}_z$. We take the component weight logits as $\hat\beta_n = \log \hat\pi_z$ and take $\hat\gamma = \log \hat\pi_z$ so that the initial $\beta_n$'s are the mean of their generating distribution, i.e. $\EE[\text{Dir}(\hat\beta \gamma)] = \beta_n$.
+    \item The heirarchical Dirichlet prior is initialized so that $\beta_{n, z} = \hat{\pi}_z$. We take the component weight logits as $\bar\beta_n = \log \hat\pi_z$ and take $\bar\gamma = \log \hat\pi_z$ so that the initial $\beta_n$'s are the mean of their generating distribution, i.e. $\EE[\text{Dir}(\hat\beta \gamma)] = \beta_n$.
 \end{itemize}
 
 

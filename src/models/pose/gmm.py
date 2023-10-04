@@ -1,5 +1,6 @@
 from typing import NamedTuple, Tuple
 from jaxtyping import Array, Float, Float32, Integer, Scalar, PRNGKeyArray as PRNGKey
+from tensorflow_probability.substrates import jax as tfp
 from sklearn import mixture
 import numpy.random as nr
 import numpy as np
@@ -12,27 +13,26 @@ import jax.nn as jnn
 
 from .pose_model import *
 from ...util.computations import (
-    extract_tril_cholesky, restack, sq_mahalanobis
-)
-
-
-from ...util.computations import (
     expand_tril_cholesky, extract_tril_cholesky,
     gaussian_product, normal_quadform_expectation,
-    linear_transform_gaussian)
+    linear_transform_gaussian, sq_mahalanobis)
 
 
 class GMMParameters(NamedTuple):
     """
     Parameters for Gaussian mixture pose space model.
 
-    :param weight_logits: Probability logits over mixture components
-        for each subject.
+    :param subj_weight_logits: Probability logits over mixture components
+        for each subject. Observable layer of the heirarchical Dirichlet prior.
+    :param pop_weight_logits: Probability logits over mixture components
+        shared across the population. Hidden layer of the heirarchical
+        Dirichlet prior.
     :param means: Mean for each mixture component.
     :param cholesky: Flat cholesky decomposition of covariance matrix
         for each mixture component.
     """
-    weight_logits: Float[Array, "N L"]
+    subj_weight_logits: Float[Array, "N L"]
+    pop_weight_logits: Float[Array, "L"]
     means: Float[Array, "L M"]
     cholesky: Float[Array, "L (M+1)*M/2"]
 
@@ -44,7 +44,10 @@ class GMMParameters(NamedTuple):
         return extract_tril_cholesky(covariances) 
 
     def weights(self) -> Float[Array, "N L"]:
-        return jnn.softmax(self.weight_logits, axis = 1)
+        return jnn.softmax(self.subj_weight_logits, axis = 1)
+    
+    def pop_weights(self) -> Float[Array, "L"]:
+        return jnn.softmax(self.pop_weight_logits)
 
 
 class GMMHyperparams(NamedTuple):
@@ -55,11 +58,20 @@ class GMMHyperparams(NamedTuple):
     :param M: Pose space dimension.
     :param L: Number of mixture components.
     :param eps: Observation error variance.
+    :pop_weight_uniformity: Tighness of the distribution of expected cluster
+        weights. Variance of population cluster weights is inversely
+        proportional to this parameter plus one. Positive float.
+    :subj_weight_uniformity: Tightness of the distribution of subject cluster
+        weights around the population expected cluster weight. Variance of
+        subject-wise cluster weights inversely proportional to this parameter
+        plus one. Positive float.
     """
     N: int
     M: int
     L: int
     eps: int
+    pop_weight_uniformity: float
+    subj_weight_uniformity: float
 
 
 class GMMPoseStates(NamedTuple):
@@ -257,12 +269,12 @@ def logprob_expectations(
 def sample_parameters(
     rkey: PRNGKey,
     hyperparams: GMMHyperparams,
-    pi_logit_means: Float[Array, "N L"],
-    pi_logit_vars: Float[Array, "N L"],
     m_norm_center: Scalar,
     m_norm_spread: Scalar,
     q_var_center: Scalar,
-    q_var_spread: Scalar
+    q_var_spread: Scalar,
+    pi_logit_means: Float[Array, "N L"] = None,
+    pi_logit_vars: Float[Array, "N L"] = None,
     ) -> GMMParameters:
     r"""
     We use the following generative framework for $\theta$, the
@@ -280,13 +292,20 @@ def sample_parameters(
         \mathcal{N}(\mathrm{q_var_center}, \mathrm{q_var_spread})
     ))
     $$
+
+    If `pi_logit_means` or `pi_logit_vars` is omitted, then the component
+    weights will be sampled from a heirarchical Dirichlet distribution
+    according to the hyperparameters `pop_weight_uniformity` and
+    `subj_weight_uniformity`.
+
+    $$
+    \beta \sim \mathrm{Dir}(\mathrm{pop_weight_uniformity}) \\
+    \mathrm{weight_logits} \sim
+    \mathrm{Dir}(\mathrm{subj_weight_uniformity\ }\cdot\, \beta)
+    $$
     
     :param rkey: JAX random key.
     :param hyperparams: Hyperparameters of a GMM pose space model.
-    :param pi_logit_means: Mean vector of Gaussian logits for
-        component weights.
-    :param pi_logit_vars: Diagonal covariance of Gaussian logits for
-        component weights.
     :param m_norm_center: Median of log-normally distributed norms of
         cluster centers.
     :param m_norm_spread: Spread of log-normally distributed norms of
@@ -295,23 +314,53 @@ def sample_parameters(
         of cluster coviariances.
     :param q_var_spread: Spread of log-normally distributed diagonals
         of cluster coviariances.
+    :param pi_logit_means: Mean vector of Gaussian logits for
+        component weights. Allows additional specification of component
+        weights not conforming to the heirarchical Dirichlet prior.
+    :param pi_logit_vars: Diagonal covariance of Gaussian logits for
+        component weights. Allows additional specification of component
+        weights not conforming to the heirarchical Dirichlet prior.
     """
 
-    rkey = jr.split(rkey, 4)
+    rkey = jr.split(rkey, 5)
 
     # --- Component weights
-    pi_logits = pi_logit_means + jnp.sqrt(pi_logit_vars) * jr.normal(
-        rkey[0],
-        shape = pi_logit_means.shape)
+    if pi_logit_means is not None and pi_logit_vars is not None:
+        subj_weight_logits = (
+            pi_logit_means +
+            jnp.sqrt(pi_logit_vars) * jr.normal(
+                rkey[0],
+                shape = pi_logit_means.shape))
+        subj_weights = jnn.softmax(subj_weight_logits)
+        pop_weights = subj_weights.mean(axis = 0)
+        pop_weight_logits = jnp.log(pop_weights)
+    else:
+        pop_weights = jr.dirichlet(
+            rkey[0],
+            jnp.ones([hyperparams.L]) *
+                hyperparams.pop_weight_uniformity /
+                hyperparams.L
+        )
+        pop_weight_logits = jnp.log(pop_weights)
+        subj_weight_logits = jnp.log(jr.dirichlet(
+            rkey[1],
+            pop_weights * hyperparams.subj_weight_uniformity,
+            shape = (hyperparams.N,)
+        ))
+    # logits are defined up to an additive constant
+    pop_weight_logits = pop_weight_logits - pop_weight_logits.mean()
+    subj_weight_logits = (
+        subj_weight_logits - 
+        subj_weight_logits.mean(axis = 1, keepdims = True))
 
     # --- Component means
     m_direction: Float[Array, "L"] = jr.multivariate_normal(
-        rkey[1],
+        rkey[2],
         jnp.zeros(hyperparams.M), jnp.diag(jnp.ones(hyperparams.M)),
         shape = (hyperparams.L,)
     )
     m_norm = jnp.exp(m_norm_center + m_norm_spread * jr.normal(
-        rkey[2],
+        rkey[3],
         shape = (hyperparams.L,)
     ))
     m = (m_direction * m_norm[:, None] /
@@ -319,7 +368,7 @@ def sample_parameters(
 
     # --- Component covairances
     q_sigma = jnp.exp(q_var_center * q_var_spread * jr.normal(
-        rkey[3],
+        rkey[4],
         shape = (hyperparams.L, hyperparams.M),
     ))
     Q = jnp.zeros([hyperparams.L, hyperparams.M, hyperparams.M])
@@ -327,7 +376,11 @@ def sample_parameters(
     Q = Q.at[:, q_diag, q_diag].set(q_sigma)
     Q_chol = GMMParameters.cholesky_from_covariances(Q)
 
-    return GMMParameters(weight_logits = pi_logits, means = m, cholesky = Q_chol)
+    return GMMParameters(
+        pop_weight_logits = pop_weight_logits,
+        subj_weight_logits = subj_weight_logits,
+        means = m,
+        cholesky = Q_chol)
 
 
 def sample(
@@ -411,7 +464,8 @@ def init_parameters_and_latents(
     init_counts[init_counts == 0] = count_eps
     
     return GMMParameters(
-        weight_logits = jnp.log(init_counts),
+        subj_weight_logits = jnp.log(init_counts),
+        pop_weight_logits = jnp.log(init_counts[reference_subject]),
         means = init_mix.means_,
         cholesky = extract_tril_cholesky(init_mix.covariances_)
     )
@@ -434,11 +488,31 @@ def discrete_mle(
         poses = poses
     )
 
+
 def log_prior(
     params: GMMParameters,
     hyperparams: GMMHyperparams,
     ):
-    return 0
+    # Heirarchical dirichlet prior on component weights
+    pop_weights = params.pop_weights()
+    pop_logpdf = tfp.distributions.Dirichlet(
+        jnp.ones([hyperparams.L]) *
+            hyperparams.pop_weight_uniformity /
+            hyperparams.L,
+    ).log_prob(pop_weights)
+    subj_logpdf = tfp.distributions.Dirichlet( 
+        hyperparams.subj_weight_uniformity *
+        pop_weights[None]
+    ).log_prob(params.weights()).sum()
+    # Remove symmetry of logits up to additive constant
+    pop_zero = -(params.pop_weight_logits.mean() ** 2) / 2
+    subj_zero = -(params.subj_weight_logits.mean(axis = 1) ** 2).sum() / 2
+
+    return pop_logpdf + subj_logpdf + pop_zero + subj_zero
+    
+
+
+    
 
 
 GMMPoseSpaceModel = PoseSpaceModel(

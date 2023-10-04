@@ -104,7 +104,6 @@ def _mstep_objective(
         hyperparams.morph
     )
 
-    # return morph_prior
     return pose.objective(
         model.posespace,
         observations,
