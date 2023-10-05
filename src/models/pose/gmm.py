@@ -508,10 +508,21 @@ def log_prior(
     pop_zero = -(params.pop_weight_logits.mean() ** 2) / 2
     subj_zero = -(params.subj_weight_logits.mean(axis = 1) ** 2).sum() / 2
 
-    return pop_logpdf + subj_logpdf + pop_zero + subj_zero
+    return dict(
+        pop_weight     = pop_logpdf,
+        subj_weight    = subj_logpdf,
+        pop_asymmetry  = pop_zero,
+        subj_asymmetry = subj_zero
+    )
     
 
-
+def reports(
+    hyperparams: GMMHyperparams,
+    params: GMMParameters,
+    ):
+    return dict(
+        priors = log_prior(params, hyperparams)
+    )
     
 
 
@@ -523,7 +534,8 @@ GMMPoseSpaceModel = PoseSpaceModel(
     discrete_prob = discrete_prob,
     aux_distribution = aux_distribution,
     log_prior = log_prior,
-    init = init_parameters_and_latents
+    init = init_parameters_and_latents,
+    reports = reports
 )
 
 

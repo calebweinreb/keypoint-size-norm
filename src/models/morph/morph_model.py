@@ -31,6 +31,7 @@ class MorphModel(NamedTuple):
          Optional[Float[Array, "N KD M"]], Optional[Float[Array, "N KD"]]],
         Scalar]
     init: Callable[..., MorphParameters]
+    reports: Callable[..., dict]
 
     def pose_mle(
         self,

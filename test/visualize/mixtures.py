@@ -259,13 +259,18 @@ def sampled_mixture_plot(
     pose_model: gmm.GMMParameters,
     latents: gmm.GMMPoseStates,
     obs: pose.Observations,
+    subject_whitelist: Tuple[int] = None,
 ):
+    if subject_whitelist is None:
+        subject_whitelist = np.arange(pose_hyperparams.N)
+    N = len(subject_whitelist)
+
     gs = gridspec.GridSpec(
-        4, pose_hyperparams.N ,
+        4, N ,
         height_ratios = [4, 4, 1.5, 1.5])
     ax = np.array([[
         fig.add_subplot(gs[r, c])
-        for c in range(pose_hyperparams.N)]for r in range(3)])
+        for c in range(N)]for r in range(3)])
 
     comp_pal = np.array(sns.color_palette('Set1', n_colors = pose_hyperparams.L))
 
@@ -276,12 +281,14 @@ def sampled_mixture_plot(
     ))
 
     vrng = None
-    for i_subj in range(pose_hyperparams.N):
+    for i_subj in range(N):
+        subj_id = subject_whitelist[i_subj]
+
         scatrng = subjectwise_mixture_plot(
             ax = ax[0, i_subj],
             n_components = pose_hyperparams.L,
-            data = obs.unstack(obs.keypts)[i_subj],
-            component_ids = obs.unstack(latents.components)[i_subj],
+            data = obs.unstack(obs.keypts)[subj_id],
+            component_ids = obs.unstack(latents.components)[subj_id],
             model_means = None, model_covs = None,
             compare_means = None, compare_covs = None,
             pal = comp_pal
@@ -303,13 +310,14 @@ def sampled_mixture_plot(
         vrng = combine_vrng(vrng, subjectwise_mixture_plot(
             ax = ax[1, i_subj],
             n_components = pose_hyperparams.L,
-            data = obs.unstack(latents.poses)[i_subj],
-            component_ids = obs.unstack(latents.components)[i_subj],
+            data = obs.unstack(latents.poses)[subj_id],
+            component_ids = obs.unstack(latents.components)[subj_id],
             model_means = pose_model.means,
+            # model_means = None,
             model_covs = pose_model.covariances(),
             compare_means = empirical_means,
             compare_covs = empirical_covs,
-            pal = comp_pal
+            pal = comp_pal,
         ))
 
         # ax[1, i_subj].scatter(
@@ -329,11 +337,11 @@ def sampled_mixture_plot(
         #     alpha_range = (0.2, 0.4)))
 
         empirical_latent_dist = jnp.histogram(
-            obs.unstack(latents.components)[i_subj],
+            obs.unstack(latents.components)[subj_id],
             jnp.arange(pose_hyperparams.L+1) - 0.5,
             density = True)[0]
         compare_dirichlet_blocks(
-            pose_model.weights()[i_subj],
+            pose_model.weights()[subj_id],
             [empirical_latent_dist],
             pal = comp_pal,
             ax = ax[2, i_subj],
@@ -342,7 +350,7 @@ def sampled_mixture_plot(
             label_kwargs = dict(rotation = 90, verticalalignment = "center"))
         sns.despine(ax = ax[2, i_subj], bottom = True, left = True)
 
-        ax[2, i_subj].set_xlabel(f"Subject {i_subj}")
+        ax[2, i_subj].set_xlabel(f"Subject {subj_id}")
 
     apply_vrng(ax[0, 0], vrng)
 

@@ -186,6 +186,7 @@ def unstack(
 
 def restack(
     arrs,
+    axis = 0
     ) -> Array:
     """
     Convert unstacked array back to stacked.
@@ -197,12 +198,30 @@ def restack(
     or similar for |B|.
     
     Args:
-        arrs: Array-like or tuple of array-like, shape (A, B, ...)
+        arrs: Tuple-like of array-like, shape List[(..., b_i, ...)]
+            Arrays to be stacked. All dimensions must match except `axis`.
+        axis: int
+            Axis along which to stack the arrays
 
     Returns:
-        stacked: Array-like of shpe (A * B, ...)
+        stacked: Array-like of shpe (sum b_i, ...)
     """
-    return jnp.stack(arrs).flatten()
+    return jnp.concatenate(arrs, axis = axis)
+
+
+def stack_ixs(
+    arrs
+    ) -> Array:
+    """
+    Convert unstacked array to stacked array of indices.
+    
+    This function is the other defines an inverse pair between to `restack` and
+    `unstack`. In particular,
+        unstack(restack(arrs), stack_ixs(arrs)) == arrs
+    """
+    return restack([
+        jnp.broadcast_to(jnp.array([i]), len(arr))
+        for i, arr in enumerate(arrs)])
 
 
 def linear_transform_gaussian(

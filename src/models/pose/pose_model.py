@@ -90,6 +90,7 @@ class PoseSpaceModel(NamedTuple):
         [PoseSpaceParameters, PoseSpaceHyperparams], 
         Scalar]
     init: Callable[..., Tuple[PoseSpaceParameters]]
+    reports: Callable[..., dict]
 
 
 
@@ -140,10 +141,7 @@ def objective(
         posespace_model.discrete_prob(query_params, hyperparams)
     )
 
-    log_prior: Scalar = posespace_model.log_prior(
-        query_params, hyperparams)
-
     # ----- Sum terms and return
     return (
         term_weights * (model_log_exp + common_logprob_expect)
-    ).sum() + log_prior
+    ).sum() 

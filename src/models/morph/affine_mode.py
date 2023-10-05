@@ -154,7 +154,7 @@ def log_prior(
 
     # Logpdf of N(0, 1) evaluated at mode log-norms
     mode_norms = jnp.linalg.norm(params.modes, axis = 0) # (L,)
-    mode_logpdf = -(jnp.log(mode_norms) ** 2).sum() / 2
+    mode_logpdf = -(jnp.log(mode_norms) ** 2).sum() / 2 * 100
 
     # Logpdf of N(0, update_scale * I) evaluated at each
     # (normalized) update vector
@@ -163,9 +163,19 @@ def log_prior(
     update_logpdf = -(update_sqnorms.sum() / 
         hyperparams.update_scale ** (2 * hyperparams.M)) / 2
     
-    return (avg_offset_sqnorm + avg_scale_sqnorm +
-            mode_logpdf + update_logpdf)
+    return dict(
+        offset = avg_offset_sqnorm,
+        scale  = avg_scale_sqnorm,
+        mode   = mode_logpdf,
+        update = update_logpdf,)
 
+
+def reports(
+    hyperparams: AffineModeMorphHyperparams,
+    params: AffineModeMorphParameters
+    ) -> dict:
+    return dict(
+        priors = log_prior(params, hyperparams))
 
 
 def init(
@@ -206,5 +216,6 @@ AffineModeMorph = MorphModel(
     sample_parameters = sample_parameters,
     get_transform = get_transform,
     log_prior = log_prior,
-    init = init
+    init = init,
+    reports = reports
 )

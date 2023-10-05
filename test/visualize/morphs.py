@@ -7,33 +7,37 @@ import seaborn as sns
 
 def plot_subjectwise_scalar_comparison(
     ax,
-    scalars: Float[Array, "n_subject 2"],
+    scalars: Tuple[Float[Array, "n_subject"]],
     labels: Tuple[str],
     pal: Tuple = ('.5', '.3'),
+    subject_whitelist = None
     ):
-    n_subject = len(scalars)
-    ax.bar(
-        np.arange(n_subject) - 0.1,
-        jnp.maximum(scalars[:, 0] - 1, 0) - jnp.minimum(scalars[:, 0] - 1, 0),
-        bottom = jnp.minimum(scalars[:, 0] - 1, 0) + 1,
-        color = pal[0], zorder = 2, width = 0.1,
-        label = labels[0]
-    )
-    ax.bar(
-        np.arange(n_subject) + 0.1,
-        jnp.maximum(scalars[:, 1] - 1, 0) - jnp.minimum(scalars[:, 1] - 1, 0),
-        bottom = jnp.minimum(scalars[:, 1] - 1, 0) + 1,
-        color = pal[1], zorder = 2, width = 0.1,
-        label = labels[1]
-    )
+    if subject_whitelist is None:
+        subject_whitelist = np.arange(len(scalars[0]))
+    n_subject = len(subject_whitelist)
+    n_scalars = len(scalars)
+    bar_width = 0.1
+    bar_ofs = 0.1
+    first_bar_ofs = n_scalars - 1
+    for i_bar in range(n_scalars):
+        curr_scalars = np.array(scalars[i_bar])[subject_whitelist]
+        ax.bar(
+            np.arange(n_subject) - first_bar_ofs + bar_ofs * i_bar,
+            jnp.maximum(curr_scalars - 1, 0) - jnp.minimum(curr_scalars - 1, 0),
+            bottom = jnp.minimum(curr_scalars - 1, 0) + 1,
+            color = pal[i_bar % len(pal)], zorder = 2, width = bar_width,
+            label = labels[i_bar]
+        )
     ax.set_xlim([-0.5, n_subject - 1 + 0.5])
-    ax.set_ylim([scalars.min() - 0.05, scalars.max() + 0.05])
+    ax.set_ylim([
+        np.array(scalars).min() - 0.05,
+        np.array(scalars).max() + 0.05])
     for tick in ax.get_yticks()[1:-1]:
         ax.axhline(tick, ls = '--', lw = 0.5, color = '.7', zorder = 1)
     ax.legend(loc = "upper right", fancybox = False, edgecolor = 'w', framealpha = 0.9)
     
     ax.set_xticks(np.arange(n_subject))
-    ax.set_xticklabels([f"Subject {i_subj}" for i_subj in range(n_subject)])
+    ax.set_xticklabels([f"Subject {subj_id}" for subj_id in subject_whitelist])
     ax.set_ylabel("Subject scale")
     sns.despine(ax = ax)
         
@@ -60,8 +64,13 @@ def plot_morph_action(
     morph_hyperparams,
     morph_params,
     vectors: Float[Array, "morph_in_dim n_vector"],
-    display_scale = 1):
+    display_scale = 1,
+    subject_whitelist: Tuple[int] = None,
+    ):
     """Display input-output mapping of a morph on given vectors."""
+    if subject_whitelist is None:
+        subject_whitelist = np.arange(morph_hyperparams.N)
+    
     morph_matrix, morph_ofs = morph_model.get_transform(
         morph_params, morph_hyperparams)
     morphed = ( # (n_subj, morph_out_dim, n_vector)
@@ -70,7 +79,8 @@ def plot_morph_action(
        + morph_ofs[..., None] # (n_subj, morph_out_dim, 1)
     )
     n_vector = vectors.shape[1]
-    for i_subj in range(morph_hyperparams.N):
+    N = len(subject_whitelist)
+    for i_subj, subj_id in enumerate(subject_whitelist):
         for i_vector, ls, col in zip(
                 range(min(n_vector, 2)),
                 ['-', '-'],
@@ -79,20 +89,22 @@ def plot_morph_action(
             plot_paired_vectors(
                 ax[:, i_subj],
                 jnp.stack([
-                    morphed[i_subj, :, i_vector],
+                    morphed[subj_id, :, i_vector],
                     vectors[:, i_vector]
                 ], axis = 0),
                 origins = jnp.stack([
-                    morph_ofs[i_subj],
+                    morph_ofs[subj_id],
                     jnp.zeros(2),
                 ]),
                 artist_kws = dict(
-                    lw = 1, head_width = 0.6, head_length = 0.6,
-                     color = col, ls = ls),
+                    lw = 1,
+                    head_width = 0.6 * np.sqrt(display_scale),
+                    head_length = 0.6 * np.sqrt(display_scale),
+                    color = col, ls = ls),
                 display_scale = display_scale
             )
         ax[0, i_subj].plot(
-            [morph_ofs[i_subj, 0]], [morph_ofs[i_subj, 1]],
+            [morph_ofs[subj_id, 0]], [morph_ofs[subj_id, 1]],
             'ko', ms = 3)
         ax[1, i_subj].plot([0], [0], 'ko', ms = 3)
 
@@ -103,9 +115,10 @@ def plot_morph_action_standard_basis(
     morph_hyperparams,
     morph_params,
     display_scale = 1,
+    subject_whitelist = None
     ):
     plot_morph_action(ax, morph_model, morph_hyperparams, morph_params,
-                      jnp.eye(2), display_scale)
+                      jnp.eye(2), display_scale, subject_whitelist)
 
 
 
@@ -114,7 +127,8 @@ def plot_morph_dimensions(
     morph_hyperparams,
     morph_model,
     morph_params, 
-    display_scale = 1
+    display_scale = 1,
+    subject_whitelist = None,
     ):
     """Display input-output mapping of a 2D affine-modal morph.
     
@@ -129,4 +143,5 @@ def plot_morph_dimensions(
         morph_hyperparams,
         morph_params,
         morph_params.modes,
-        display_scale)
+        display_scale,
+        subject_whitelist)

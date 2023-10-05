@@ -1,7 +1,7 @@
 from typing import NamedTuple, Tuple, Protocol
 from jaxtyping import Scalar, Float, Array, Integer
 from functools import partial
-from jax.tree_util import tree_flatten, tree_unflatten
+import jax.tree_util as pt
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -10,11 +10,13 @@ import jax
 
 from ..models import pose
 from ..models import joint_model
+from ..util import logging
 
-def _scale_updates(updates, factor):
-    val_flat, val_tree = tree_flatten(updates)
-    val_scaled = list(map(lambda v: v * factor, val_flat))
-    return tree_unflatten(val_tree, val_scaled)
+
+def _pytree_sum(tree):
+    return pt.tree_reduce(
+        lambda x, y: x.sum() + y.sum(),
+        tree)
 
 
 def _check_should_stop_early(loss_hist, tol):
@@ -99,11 +101,14 @@ def _mstep_objective(
         query_params.morph,
         hyperparams.morph)
     
-    morph_prior = model.morph.log_prior(
+    morph_prior = _pytree_sum(model.morph.log_prior(
         query_params.morph,
         hyperparams.morph
-    )
-
+    ))
+    posespace_prior = _pytree_sum(model.posespace.log_prior(
+        query_params.posespace,
+        hyperparams.posespace))
+    
     return pose.objective(
         model.posespace,
         observations,
@@ -113,7 +118,7 @@ def _mstep_objective(
         hyperparams.posespace,
         aux_pdf,
         term_weights
-    ) + morph_prior
+    ) + morph_prior + posespace_prior
 
 
 def _mstep_loss(
@@ -178,15 +183,6 @@ def _mstep(
     step = jitted_step
     if step is None:
         step = construct_jitted_mstep(model, optimizer)
-    # loss_func = _mstep_loss(model)
-
-    # @partial(jax.jit, static_argnums = (3,))
-    # def step(opt_state, params, emissions, hyperparams, aux_pdf, term_weights):
-    #     loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
-    #         params, emissions, hyperparams, aux_pdf, term_weights)
-    #     updates, opt_state = optimizer.update(grads, opt_state, params)
-    #     params = optax.apply_updates(params, updates)
-    #     return params, opt_state, loss_value
 
     # ----- Set up variables for iteration
 
@@ -234,7 +230,8 @@ def iterate_em(
     mstep_tol: float = None,
     mstep_stop_window: int = 10,
     return_mstep_losses = False,
-    return_param_hist = False
+    return_param_hist = False,
+    return_reports = False,
     ) -> Tuple[
         Float[Array, "n_steps"], joint_model.JointParameters,
         Float[Array, "n_steps mstep_n_steps"],
@@ -246,6 +243,7 @@ def iterate_em(
     curr_params = init_params
     loss_hist = np.empty([n_steps])
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
+    report_trace = logging.ReportTrace(n_steps)
     if return_mstep_losses:
         mstep_losses = np.full([n_steps, mstep_n_steps], np.nan)
     if return_param_hist:
@@ -282,6 +280,18 @@ def iterate_em(
             mstep_losses[step_i, :len(loss_hist_mstep)] = loss_hist_mstep
         if return_param_hist:
             param_hist.append(curr_params)
+
+        if return_reports:
+            report_trace.record(dict(
+                morph = model.morph.reports(
+                    hyperparams.morph, curr_params.morph),
+                posespace = model.posespace.reports(
+                    hyperparams.posespace, curr_params.posespace),
+                main_loss = _mstep_objective(
+                    model, emissions, curr_params,
+                    hyperparams, aux_pdf, term_weights)),
+                step_i)
+
         
         if (log_every > 0) and (not step_i % log_every):
             print(f"Step {step_i} : loss = {loss_hist[step_i]}")
@@ -297,4 +307,5 @@ def iterate_em(
     ret = loss_hist, curr_params
     if return_mstep_losses: ret = ret + (mstep_losses,)
     if return_param_hist: ret = ret + (param_hist,)
+    if return_reports: ret = ret + (report_trace,)
     return ret 
