@@ -14,8 +14,8 @@ class PCAData(NamedTuple):
     s: Float[Array, "*#K n_feats"]
     v: Float[Array, "*#K n_feats n_feats"]
 
-    def __getitem__(self, *slc):
-        return PCAData(self.n_fit, self.s[slc], self.v[slc])
+    def __getitem__(self, slc):
+        return PCAData(self.n_fit, self.s[..., slc], self.v[..., slc])
 
     def pcs(self) -> Float[Array, "*#K n_feats n_feats"]:
         """
@@ -108,6 +108,15 @@ class PCAData(NamedTuple):
         return (arr * (self.s[..., None, :] / norm)) @ vt
     
     
+class CenteredPCA():
+    def __init__(self, center, pcadata):
+        self._pcadata = pcadata
+        self._center = center
+    
+    def from_coords(self, arr: Float[Array, "*#K n_pts n_feats"]):
+        return self._pcadata.from_coords(arr) + self._center[..., None, :]
+
+
 def fit(
     data: Float[Array, "*#K n_samples n_feats"],
     centered: bool = False,

@@ -21,10 +21,44 @@ class AffineModeMorphParameters(NamedTuple):
     :param modes: Morph dimensions across the full population.
     :param updates: Updates to the morph modes for each subject.
     """
-    uniform_scale: Float[Array, "N"]
-    modes: Float[Array, "M L"]
-    updates: Float[Array, "N M L"]
-    offsets: Float[Array, "N M"]
+    p_uniform_scale: Float[Array, "N"]
+    p_modes: Float[Array, "M L"]
+    p_updates: Float[Array, "N M L"]
+    p_offsets: Float[Array, "N M"]
+    
+    @staticmethod
+    def create(
+        uniform_scale: Float[Array, "N"],
+        modes: Float[Array, "M L"],
+        updates: Float[Array, "N M L"],
+        offsets: Float[Array, "N M"]):
+        return AffineModeMorphParameters(
+            p_uniform_scale = AffineModeMorphParameters.normalize_scale(uniform_scale),
+            p_modes = AffineModeMorphParameters.normalize_modes(modes),
+            p_updates = updates,
+            p_offsets = AffineModeMorphParameters.normalize_offsets(offsets))
+    
+
+    def uniform_scale(self): 
+        return AffineModeMorphParameters.normalize_scale(self.p_uniform_scale)
+    def modes(self):
+        return AffineModeMorphParameters.normalize_modes(self.p_modes)
+    def updates(self): return self.p_updates
+    def offsets(self):
+        return AffineModeMorphParameters.normalize_offsets(self.p_offsets)
+    
+    @staticmethod
+    def normalize_scale(scales):
+        return scales - scales.mean()
+    
+    @staticmethod
+    def normalize_modes(modes):
+        return modes / jnp.linalg.norm(modes, axis = -2, keepdims = True)
+
+    @staticmethod
+    def normalize_offsets(offsets):
+        return offsets #- offsets.mean(axis = -1, keepdims = True)
+
 
 
 class AffineModeMorphHyperparams(NamedTuple):
@@ -63,14 +97,15 @@ def get_transform(
     """
 
     # Pesudoinverse and projection onto orthogonal complement of U
-    mp_inv = jla.pinv(params.modes) # (U^T U)^{-1} U^T, shape: (L, M)
+    modes = params.modes()
+    mp_inv = jla.pinv(modes) # (U^T U)^{-1} U^T, shape: (L, M)
     orthog_proj = ( # I - U (U^T U)^{-1} U^T, shape: (M, M)
         jnp.eye(hyperparams.M) -
-        params.modes @ mp_inv
+        modes @ mp_inv
     )
     
     # Reconstruction matrix, U + \hat{U}
-    reconst = params.modes[None] + params.updates # (N, M, L)
+    reconst = modes[None] + params.updates() # (N, M, L)
 
     # reconst @ U^+, shape: (N, M, M)
     rot = reconst @ mp_inv
@@ -83,8 +118,11 @@ def get_transform(
         # (N, M, M) + (1, M, M)
         (rot + orthog_proj[None]) *
         # (N, 1, 1)
-        jnp.exp(params.uniform_scale)[:, None, None]
-    ), params.offsets
+        jnp.exp(params.uniform_scale())[:, None, None]
+        # jnp.stack([
+        #     jnp.eye(hyperparams.M)
+        #     for _ in range(hyperparams.N)])
+    ), params.offsets()
 
 
 def sample_parameters(
@@ -116,7 +154,7 @@ def sample_parameters(
         vectors.
     """
     rkey = jr.split(rkey, 6)
-    ret = AffineModeMorphParameters(
+    ret = AffineModeMorphParameters.create(
 
         uniform_scale = uniform_scale_std * jr.normal(rkey[1],
             shape = (hyperparams.N,)),
@@ -148,26 +186,14 @@ def log_prior(
     morph_ofs: Float[Array, "N KD"] = None
     ):
 
-    # Logpdfs of N(0, I) evaluated at mean offset and mean uniform_scale
-    avg_offset_sqnorm = -((params.offsets.mean(axis = 0)) ** 2).sum() / 2
-    avg_scale_sqnorm = -(params.uniform_scale.mean() ** 2) / 2
-
-    # Logpdf of N(0, 1) evaluated at mode log-norms
-    mode_norms = jnp.linalg.norm(params.modes, axis = 0) # (L,)
-    mode_logpdf = -(jnp.log(mode_norms) ** 2).sum() / 2 * 100
-
     # Logpdf of N(0, update_scale * I) evaluated at each
     # (normalized) update vector
-    normed_updates = params.updates / mode_norms[None, None] # (N, M, L)
-    update_sqnorms = (normed_updates ** 2).sum(axis = 1) # (N, L)
+    update_sqnorms = (params.updates() ** 2).sum(axis = 1) # (N, L)
     update_logpdf = -(update_sqnorms.sum() / 
         hyperparams.update_scale ** (2 * hyperparams.M)) / 2
     
     return dict(
-        offset = avg_offset_sqnorm,
-        scale  = avg_scale_sqnorm,
-        mode   = mode_logpdf,
-        update = update_logpdf,)
+        update_norm = update_logpdf,)
 
 
 def reports(
@@ -187,7 +213,7 @@ def init(
     
     # Calculate offsets
     subjwise_keypts = observations.unstack(observations.keypts)
-    offsets = jnp.stack([
+    offsets = 0*jnp.stack([
         subj_kpts.mean(axis = 0) for subj_kpts in subjwise_keypts])
     
     # Calculate uniform_scale
@@ -205,7 +231,7 @@ def init(
     pcs = pca.fit(keypts_centered[reference_subject], centered = True)
     modes = pcs.pcs()[:hyperparams.L, :].T
 
-    return AffineModeMorphParameters(
+    return AffineModeMorphParameters.create(
         uniform_scale = scales_log,
         modes = modes,
         updates = jnp.zeros([hyperparams.N, hyperparams.M, hyperparams.L]),
@@ -219,3 +245,71 @@ AffineModeMorph = MorphModel(
     init = init,
     reports = reports
 )
+
+def mode_components(
+    params: AffineModeMorphParameters,
+    hyperparams: AffineModeMorphHyperparams,
+    poses: Float[Array, "*#K M"]
+    ) -> Tuple[Float[Array, "*#K L"], Float[Array, "*#K M L"], Float[Array, "*#K M-L"]]:
+    """
+    Returns:
+        components: 
+            Components of poses along the subspace of each morph mode.
+        complement:
+            Component of poses in the complement of the span of the morph
+            modes.
+    """
+    dim_expand = (None,) * (len(poses.shape) - 1)
+    modes = params.modes()[dim_expand]
+    coords = (poses[..., None] * modes).sum(axis = 1) # (*#K, L)
+    components = coords[..., None, :] * modes # (*#K, M L)
+    complement = poses - components.sum(axis = -1)
+    return coords, components, complement
+
+
+def as_offset_only(
+    params: AffineModeMorphParameters,
+    hyperparams: AffineModeMorphHyperparams,
+    ) -> Tuple[AffineModeMorphParameters, AffineModeMorphHyperparams]:
+    return (
+        AffineModeMorphParameters(
+            p_uniform_scale = 0 * params.p_uniform_scale,
+            p_modes = params.p_modes,
+            p_updates = 0 * params.p_updates,
+            p_offsets = params.p_offsets),
+        hyperparams)
+
+    
+def as_uniform_scale(
+    params: AffineModeMorphParameters,
+    hyperparams: AffineModeMorphHyperparams,
+    ) -> Tuple[AffineModeMorphParameters, AffineModeMorphHyperparams]:
+    return (
+        AffineModeMorphParameters(
+            p_uniform_scale = params.p_uniform_scale,
+            p_modes = params.p_modes,
+            p_updates = 0 * params.p_updates,
+            p_offsets = params.p_offsets),
+        hyperparams)
+
+
+def with_sliced_modes(
+    params: AffineModeMorphParameters,
+    hyperparams: AffineModeMorphHyperparams,
+    slc: slice
+    ) -> Tuple[AffineModeMorphParameters, AffineModeMorphHyperparams]:
+    return (
+        AffineModeMorphParameters(
+            p_uniform_scale = params.p_uniform_scale,
+            p_modes = params.p_modes[:, slc],
+            p_updates = params.p_updates[:, :, slc],
+            p_offsets = params.p_offsets),
+        AffineModeMorphHyperparams(
+            N = hyperparams.N,
+            M = hyperparams.M,
+            L = params.p_modes[:, slc].shape[-1],
+            update_scale = hyperparams.update_scale,
+            modes = hyperparams.modes))
+
+
+

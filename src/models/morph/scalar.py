@@ -117,4 +117,5 @@ ScalarMorph = MorphModel(
     get_transform = get_transform,
     init = init,
     log_prior = log_prior,
+    reports = None,
 )

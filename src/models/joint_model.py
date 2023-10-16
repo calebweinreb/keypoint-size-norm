@@ -75,9 +75,13 @@ def init(
     observations: pose.Observations,
     reference_subject: int,
     seed: int = 0,
+    morph_kws: dict = {},
+    posespace_kws: dict = {}
     ) -> JointParameters:
     morph_params = model.morph.init(
-        hyperparams.morph, observations, reference_subject, seed)
+        hyperparams.morph, observations,
+        reference_subject, seed,
+        **morph_kws)
     poses = model.morph.pose_mle(
         observations, morph_params, hyperparams.morph)
     posespace_params = model.posespace.init(
@@ -85,7 +89,8 @@ def init(
         observations,
         poses,
         reference_subject,
-        seed
+        seed,
+        **posespace_kws
     )
     return JointParameters(posespace_params, morph_params)
     

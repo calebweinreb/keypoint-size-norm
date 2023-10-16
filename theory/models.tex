@@ -408,11 +408,11 @@ with $U^+$ being the Moore-Penrose pseudoinverse of U.
 
 \subsection{Gaussian mixture}
 
-In the Gaussian mixture model, our discrete pose state is categorical with weights subject to a heirarchical Dirichlet prior with hyperparameters $\hat\gamma, \hat\beta$, and our continuous pose state is normal, with mean and covariance conditional on the discrete state.
+In the Gaussian mixture model, our discrete pose state is categorical with weights subject to a heirarchical Dirichlet prior with hyperparameters $\hat\gamma, \hat\beta, \beta_{\text{max}}$, and our continuous pose state is normal, with mean and covariance conditional on the discrete state.
 \begin{align*}
     G_{\pi_n} &= \text{Cat}(\beta_n) & \text{with\ }&\pi_n = (\bar\gamma\in \RR^L, \bar\beta_n \in \RR^L,\ n\in1...N) \\
     &&& \gamma = \text{softmax}(\bar\gamma),\ \gamma \sim \text{Dir}(\hat\gamma) \\
-    &&& \beta_n = \text{softmax}(\bar\beta_n),\ \beta_n \sim \text{Dir}(\hat\beta\;\gamma) \\
+    &&& \beta_n = \text{softmax}( \beta_{\text{max}}\text{tanh}( \bar\beta_n / \beta_{\text{max}})),\ \beta_n \sim \text{Dir}(\hat\beta\;\gamma) \\
     F_{\psi\mid z} &= \NN(m_z, Q_z) & \text{with\ }&\psi = ((m_z, Q_z) \in \RR^{M} \times \RR^{M\times M},\ z\in 1 ... L)
 \end{align*}
 

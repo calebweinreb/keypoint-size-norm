@@ -36,17 +36,19 @@ class ReportTrace():
         for ax, (path, leaf) in zip(axes, zipped_paths_leafs):
             plottable = leaf.reshape([len(leaf), -1])
             ax.plot(plottable, **artist_kws)
-            if label_mode == 'title': ax.set_title(_keystr(path))
-            elif label_mode == 'yaxis': ax.set_ylabel(_keystr(path))
-            else: ax.set_xlabel(_keystr(path))
+            if label_mode == 'title': ax.set_title(_keystr(path, plottable))
+            elif label_mode == 'yaxis': ax.set_ylabel(_keystr(path, plottable))
+            else: ax.set_xlabel(_keystr(path, plottable))
 
 
 def _single_key_repr(tree_key):
     if isinstance(tree_key, pt.DictKey): return tree_key.key
     if isinstance(tree_key, pt.SequenceKey): return tree_key.idx
     if isinstance(tree_key, pt.GetAttrKey): return tree_key.name
-def _keystr(path):
-    return "/".join(_single_key_repr(k) for k in path)
+def _keystr(path, arr = None):
+    size_string = "" if arr is None else ("" if arr.size == len(arr) else
+        f' [{arr.shape[1]}]')
+    return "/".join(_single_key_repr(k) for k in path) + size_string
             
 
 

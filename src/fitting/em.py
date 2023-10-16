@@ -30,7 +30,7 @@ def _check_should_stop_early(loss_hist, tol):
             Required average improvement to continue.
     """
     return np.diff(loss_hist).mean() > -tol
-    
+
 
 def _point_weights(
     aux_dist_consts: Float[Array, "Nt L"],
@@ -109,6 +109,7 @@ def _mstep_objective(
         query_params.posespace,
         hyperparams.posespace))
     
+    # return morph_prior
     return pose.objective(
         model.posespace,
         observations,
@@ -287,7 +288,7 @@ def iterate_em(
                     hyperparams.morph, curr_params.morph),
                 posespace = model.posespace.reports(
                     hyperparams.posespace, curr_params.posespace),
-                main_loss = _mstep_objective(
+                latent_logprob = _mstep_objective(
                     model, emissions, curr_params,
                     hyperparams, aux_pdf, term_weights)),
                 step_i)
@@ -296,13 +297,14 @@ def iterate_em(
         if (log_every > 0) and (not step_i % log_every):
             print(f"Step {step_i} : loss = {loss_hist[step_i]}")
 
-        # evaluate early stopping
+        # evaluate early stopping and divergence
         if (tol is not None and step_i > stop_window and 
             _check_should_stop_early(
                 loss_hist[step_i-stop_window:step_i+1], tol)
-            ):
+            ) or (not np.isfinite(loss_hist[step_i])):
             loss_hist = loss_hist[:step_i+1]
             break
+
         
     ret = loss_hist, curr_params
     if return_mstep_losses: ret = ret + (mstep_losses,)

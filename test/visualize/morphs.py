@@ -142,6 +142,6 @@ def plot_morph_dimensions(
         morph_model,
         morph_hyperparams,
         morph_params,
-        morph_params.modes,
+        morph_params.modes(),
         display_scale,
         subject_whitelist)

@@ -36,6 +36,8 @@ class GMMParameters(NamedTuple):
     means: Float[Array, "L M"]
     cholesky: Float[Array, "L (M+1)*M/2"]
 
+    LOGIT_MAX = 5
+
     def covariances(self) -> Float32[Array, "L M M"]:
         return expand_tril_cholesky(self.cholesky, n = self.means.shape[1])
 
@@ -44,10 +46,29 @@ class GMMParameters(NamedTuple):
         return extract_tril_cholesky(covariances) 
 
     def weights(self) -> Float[Array, "N L"]:
-        return jnn.softmax(self.subj_weight_logits, axis = 1)
+        return jnn.softmax(self.logits(), axis = 1)
     
     def pop_weights(self) -> Float[Array, "L"]:
-        return jnn.softmax(self.pop_weight_logits)
+        return jnn.softmax(self.pop_logits())
+    
+    def logits(self) -> Float[Array, "N L"]:
+        return GMMParameters.normalize_logits(self.subj_weight_logits)
+    def pop_logits(self) -> Float[Array, "N L"]:
+        return GMMParameters.normalize_pop_logits(self.pop_weight_logits)
+    
+    @staticmethod
+    def normalize_logits(logits):
+        centered = logits - logits.mean(axis = 1)[:, None]
+        saturated = GMMParameters.LOGIT_MAX * jnp.tanh(
+            centered / GMMParameters.LOGIT_MAX)
+        return saturated
+    
+    @staticmethod
+    def normalize_pop_logits(pop_logits):
+        centered = pop_logits - pop_logits.mean()
+        saturated = GMMParameters.LOGIT_MAX * jnp.tanh(
+            centered / GMMParameters.LOGIT_MAX)
+        return saturated
 
 
 class GMMHyperparams(NamedTuple):
@@ -347,11 +368,6 @@ def sample_parameters(
             pop_weights * hyperparams.subj_weight_uniformity,
             shape = (hyperparams.N,)
         ))
-    # logits are defined up to an additive constant
-    pop_weight_logits = pop_weight_logits - pop_weight_logits.mean()
-    subj_weight_logits = (
-        subj_weight_logits - 
-        subj_weight_logits.mean(axis = 1, keepdims = True))
 
     # --- Component means
     m_direction: Float[Array, "L"] = jr.multivariate_normal(
@@ -377,8 +393,10 @@ def sample_parameters(
     Q_chol = GMMParameters.cholesky_from_covariances(Q)
 
     return GMMParameters(
-        pop_weight_logits = pop_weight_logits,
-        subj_weight_logits = subj_weight_logits,
+        pop_weight_logits =
+            GMMParameters.normalize_logits(pop_weight_logits),
+        subj_weight_logits =
+            GMMParameters.normalize_pop_logits(subj_weight_logits),
         means = m,
         cholesky = Q_chol)
 
@@ -416,7 +434,8 @@ def init_parameters_and_latents(
     poses: Float[Array, "Nt M"],
     reference_subject: int,
     seed: int = 0,
-    count_eps: float = 1e-3
+    count_eps: float = 1e-3,
+    fit_to_all_subj: bool = False
     ) -> Tuple[GMMParameters, GMMPoseStates]:
     """
     Initialize a GMMPoseSpaceModel based on observed keypoint data.
@@ -446,11 +465,14 @@ def init_parameters_and_latents(
     """
 
     # fit GMM to reference subject
-    init_pts = observations.unstack(poses)[reference_subject]
     init_mix = mixture.GaussianMixture(
         n_components = hyperparams.L, 
         random_state = nr.RandomState(seed),
-    ).fit(init_pts)
+    )
+    if not fit_to_all_subj:
+        init_pts = observations.unstack(poses)[reference_subject]
+        init_mix = init_mix.fit(init_pts)
+    else: init_mix = init_mix.fit(poses)
 
     # get component labels & counts across all subjects
     init_components = observations.unstack(
@@ -502,17 +524,12 @@ def log_prior(
     ).log_prob(pop_weights)
     subj_logpdf = tfp.distributions.Dirichlet( 
         hyperparams.subj_weight_uniformity *
-        pop_weights[None]
-    ).log_prob(params.weights()).sum()
-    # Remove symmetry of logits up to additive constant
-    pop_zero = -(params.pop_weight_logits.mean() ** 2) / 2
-    subj_zero = -(params.subj_weight_logits.mean(axis = 1) ** 2).sum() / 2
+        pop_weights
+    ).log_prob(params.weights())
 
     return dict(
-        pop_weight     = pop_logpdf,
-        subj_weight    = subj_logpdf,
-        pop_asymmetry  = pop_zero,
-        subj_asymmetry = subj_zero
+        pop_weight  = pop_logpdf,
+        subj_weight = subj_logpdf,
     )
     
 
