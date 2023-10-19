@@ -2,6 +2,7 @@ from typing import NamedTuple, Tuple, Protocol
 from jaxtyping import Scalar, Float, Array, Integer
 from functools import partial
 import jax.tree_util as pt
+import jax.random as jr
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -11,6 +12,7 @@ import jax
 from ..models import pose
 from ..models import joint_model
 from ..util import logging
+from ..util import computations
 
 
 def _pytree_sum(tree):
@@ -155,6 +157,16 @@ def construct_jitted_mstep(
     return step
 
 
+def construct_jitted_estep(
+    model: joint_model.JointModel
+    ):
+    @partial(jax.jit, static_argnums = (2,))
+    def step(observations, estimated_params, hyperparams):
+        return _estep(model, observations, estimated_params, hyperparams)
+    return step
+    
+
+
 def _mstep(
     model: joint_model.JointModel,
     init_params: optax.Params,
@@ -224,6 +236,8 @@ def iterate_em(
     progress = False,
     tol: float = None,
     stop_window: int = 5,
+    batch_size: int = None,
+    batch_seed: int = 23,
     mstep_learning_rate: float = 5e-3,
     mstep_n_steps: int = 2000,
     mstep_log_every: int = -1,
@@ -252,20 +266,36 @@ def iterate_em(
 
     optimizer = optax.adam(learning_rate = mstep_learning_rate)
     jitted_mstep = construct_jitted_mstep(model, optimizer)
+    jitted_estep = construct_jitted_estep(model)
+
+    if batch_size is not None:
+        batch_rkey_seed = jr.PRNGKey(batch_seed)
+        unstacked_ixs = computations.unstacked_ixs(
+            emissions.subject_ids,
+            N = hyperparams.posespace.N)
 
     for step_i in iter:
-        aux_pdf, term_weights = _estep(
-            model = model,
-            observations = emissions,
+        
+        if batch_size is not None:
+            batch_rkey_seed, batch_rkey = jr.split(batch_rkey_seed, 2)
+            batch = computations.stacked_batch(
+                batch_rkey, unstacked_ixs, batch_size)
+            step_obs = pose.Observations(
+                keypts = emissions.keypts[batch],
+                subject_ids = emissions.subject_ids[batch])
+        else:
+            step_obs = emissions
+
+        aux_pdf, term_weights = jitted_estep(
+            observations = step_obs,
             estimated_params = curr_params,
-            hyperparams = hyperparams
-            )
+            hyperparams = hyperparams)
         loss_hist_mstep, fit_params_mstep = _mstep(
             model = model,
             init_params = curr_params,
             aux_pdf = aux_pdf,
             term_weights = term_weights,
-            emissions = emissions,
+            emissions = step_obs,
             hyperparams = hyperparams,
             optimizer = optimizer,
             n_steps = mstep_n_steps,
@@ -289,7 +319,7 @@ def iterate_em(
                 posespace = model.posespace.reports(
                     hyperparams.posespace, curr_params.posespace),
                 latent_logprob = _mstep_objective(
-                    model, emissions, curr_params,
+                    model, step_obs, curr_params,
                     hyperparams, aux_pdf, term_weights)),
                 step_i)
 
@@ -303,6 +333,7 @@ def iterate_em(
                 loss_hist[step_i-stop_window:step_i+1], tol)
             ) or (not np.isfinite(loss_hist[step_i])):
             loss_hist = loss_hist[:step_i+1]
+            print("Stopping due to early convergence or divergence.")
             break
 
         

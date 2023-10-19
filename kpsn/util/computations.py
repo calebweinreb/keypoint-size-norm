@@ -1,6 +1,7 @@
 from typing import Tuple, Optional
-from jaxtyping import Float, Array
+from jaxtyping import Float, Array, Integer, PRNGKeyArray as PRNGKey
 import jax.numpy as jnp
+import jax.random as jr
 import jax
 
 def quadform(
@@ -178,11 +179,10 @@ def unstack(
         arrs: Arrays (Na..., T, Nb...) for each subject.
     """
     if N is None: N = ixs.max() + 1
-    # for i in range(N):
-    #     print(arr.shape, jnp.where(ixs == i)[0])
     return tuple(
         jnp.take(arr, jnp.where(ixs == i)[0], axis = axis)
         for i in range(N))
+
 
 def restack(
     arrs,
@@ -213,7 +213,7 @@ def stack_ixs(
     arrs
     ) -> Array:
     """
-    Convert unstacked array to stacked array of indices.
+    Convert unstacked list of arrays to stacked array of indices.
     
     This function is the other defines an inverse pair between to `restack` and
     `unstack`. In particular,
@@ -222,6 +222,31 @@ def stack_ixs(
     return restack([
         jnp.broadcast_to(jnp.array([i]), len(arr))
         for i, arr in enumerate(arrs)])
+
+
+def unstacked_ixs(
+    ixs,
+    N: int = None
+    ) -> Tuple[Integer[Array, 'M']]:
+    """
+    Convert stacked array of indices to unstacked list of of indices
+    into stacked array.
+    """
+    return unstack(jnp.arange(len(ixs)), ixs, N = N)
+
+
+def stacked_batch(
+    rkey: PRNGKey,
+    unstacked_ixs: Tuple[Integer[Array, "M"]],
+    batch_size: int,
+    replace: bool = False,
+    ) -> Integer[Array, "n_stacked*batch_size"]:
+    """
+    Sample stacked batch indices from a list of index arrays
+    """
+    return restack([
+        jr.choice(rkey, ixs, (batch_size,), replace = replace)
+        for ixs in unstacked_ixs])
 
 
 def linear_transform_gaussian(

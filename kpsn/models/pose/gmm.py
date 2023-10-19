@@ -269,7 +269,6 @@ def logprob_expectations(
     )
 
     # ----- Compute expectation terms
-
     obs_term = normal_quadform_expectation(
         aux_pdf.mean, aux_pdf.cov,
         ps_mean[:, None],
