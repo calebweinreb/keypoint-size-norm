@@ -68,35 +68,86 @@ Formally, suppose that we measure the poses $\{y_{n,t}\}$ of animals $n=1,...,N$
     y_{n,t} & = f_n(x_{n,t}), \ x_{n,t} \sim P_n
 \end{align}
 %
-where $\xi \sim \mathcal{N}(0, R)$ is measurement noise, $P_n$ is a distribution over idealized pose states, and $f_n$ is a \textit{morph} function that maps idealized poses to observed poses animal $n$. Our goal in fitting these parameters is to explain each animal's pose distribution through a combination of morphological and behavioral variation, embodied in the variables $f_n$ and $P_n$ repsectively. To encourage this partition, we assume that the $f_n$'s and $P_n$'s have a specific functional form defined below. 
+where $\xi \sim \NN(0, R)$ is measurement noise, $P_n$ is a distribution over idealized pose states, and $f_n$ is a \textit{morph} function that maps idealized poses to observed poses animal $n$. Our goal in fitting these parameters is to explain each animal's pose distribution through a combination of morphological and behavioral variation, embodied in the variables $f_n$ and $P_n$ repsectively. To encourage this partition, we assume that the $f_n$'s and $P_n$'s have a specific functional form defined below. 
 
 \textbf{Morph functions:}\ \ We assume each $f_n$ is an affine map with coefficients that depend on a parameter vector $\phi$. That is:
 \begin{align}
     f_n(x) = C(\phi_n) x + d(\phi_n) 
 \end{align}
-Note that the affine assumption does not limit the morph functions to simple scalings and shears in $D$-dimensional keypoint space, but rather allows for complex, pose-dependent shifts of the keypoint coordinates. We do not specify the form of the mapping $\phi \mapsto (C(\phi), d(\phi))$ at this point. Several forms are considered in section XXX.
+Note that the affine assumption does not limit the morph functions to simple scalings and shears in $D$-dimensional keypoint space, but rather allows for complex, pose-dependent shifts of the keypoint coordinates. We do not specify the form of the mapping $\phi \mapsto (C(\phi), d(\phi))$ at this point. Several options are described in section XXX.
 
-\textbf{Pose distributon:}\ \ Animals of the same species typically share the same basic repertoire of poses and differ mainly in how often each pose is realized. To capture this structure, we assume that the distributions $P_n$ are Gaussian mixtures, where the mixture modes $\mathcal{N}(m_z, Q_z)$ are shared across animals. The mixture weights $\pi_n$ differ across animals but share a common prior $\beta$. Formally:
+\textbf{Pose distributon:}\ \ Animals of the same species typically share the same basic repertoire of poses and differ mainly in how often each pose is realized. To capture this structure, we assume that the distributions $P_n$ are Gaussian mixtures, where the mixture modes $\NN(m_z, Q_z), z=1,...,L$ are shared across animals. The mixture weights $\pi_n$ differ across animals but share a common prior $\beta$. 
 \begin{align*}
-    x_{n,t} & \sim \mathcal{N}(m_{z_{n,t}}, Q_{z_{n,t}}), &
+    x_{n,t} & \sim \NN(m_{z_{n,t}}, Q_{z_{n,t}}), &
     z_{n,t} & \sim \text{Cat}(\pi_n), &
     \pi_n & \sim \text{Dir}(\beta), &
     \beta & \sim \text{Dir}(\gamma,\dots,\gamma)
+\end{align*}
+We also assume a normal-inverse-wishart (NIW) prior on the mixture modes:
+\begin{align*}
+    m_z \mid Q_z & \sim \NN(m_0, \lambda_0^{-1} Q_z), &
+    Q_z & \sim \text{Wishart}^{-1}(W_0, \nu_0) &
 \end{align*}
 
 \subsection{Expectation maximization}
 \label{sec:em-general}
 
-The model parameters $\theta = (\phi, m, Q, \pi, \beta)$ can be fit using expectation maximization (EM), which aims to maximize the expected log likelihood $\ell(\theta) = \EE_{x,z} \log P(y, x, z \mid \theta)$ by maintaining an auxiliary distribution $q(x, z \mid y, \theta^*)$ that approximates the posterior $P(x, z \mid y, \theta^*)$ for the current parameter estimate $\theta^*$. During each iteration of EM, the auxiliary distribution $q$ is updated (E-step), and then new parameters $\theta^*_{\text{new}}$ are calculated (M-step) by maximizing objective
+The model parameters $\theta = (\phi, m, Q, \pi, \beta)$ can be fit using expectation maximization (EM), which aims to maximize the expected log likelihood $\ell(\theta) = \EE_{x,z} \log P(y, x, z \mid \theta)$. EM alternates between two steps: compute the posterior distribution $q(x, z) = P(x, z \mid y, \theta^*)$ given the current parameter estimates $\theta^*$ (E-step), and updating the parameter estimates $\theta^*_\text{new}$ by maximizing the following objective with respect to $\theta$ (M-step):
 \begin{align}
-    A(\theta; \theta^*) = \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) + \log P(\theta)\label{eq:em-argmax}
+    A(\theta; \theta^*) = \EE_{q(x,z)} \log P(y, x, z \mid \theta) + \log P(\theta)
+    \label{eq:A-defn}
 \end{align}
-The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that this procedure guarantees monotonic increases in the expected log likelihood, i.e. $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$. In our case, since the model likelihood factors over animals and timepoints, the objective can be rewritten as follows.
-\begin{align}
-    A(\theta; \theta^*) = \sum_{n,t,z}  \int_x q_{n,t}(x, z)\, \log P(y_{n,t}, x, z \mid \theta) \; dx + \log P(\theta)\label{eq:em-int-argmax}
-\end{align}
-Here we derive analytic expressions for the auxiliary distrubutions as well as the above integral, and perform the M-step using gradient ascent.
+The theoretical basis for EM is that this procedure guarantees monotonic increases in the expected log likelihood, i.e. $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$ (see Murphy 11.4.7 [cite]). Here we derive an analytic expressions for $q(x, z)$ and $A(\theta; \theta^*)$ and then perform the M-step optimization using gradient ascent. Detailed derivations are given in sections XXX-XXX.
 
+\paragraph{E-step} For fixed parameters $\theta^* = (\phi^*, m^*, Q^*, \pi^*, \beta^*)$, the pairs $(x_{n,t}, z_{n,t})$ are conditionally independent across animals and timepoints, meaning $q(x, z)$ factors as follows.
+\begin{align}
+    q(x, z) = \prod_{n,t} q_{n,t}(x_{n,t}, z_{n,t})
+\end{align}
+Each factor $q_{n,t}$ is proportional to a Gaussian in $x$:
+\begin{align}
+    q_{n,t}(x_{n,t}, z_{n,t}) & = \NN(x_{n,t} \mid \mu, \Sigma) \cdot \lambda
+\end{align}
+where
+\begin{align}
+    \mu & = XXX \label{eq:mu-defn} \\
+    \Sigma & = XXX \label{eq:Sigma-defn} \\
+    \lambda & = XXX \label{eq:lambda-defn}
+\end{align}
+
+\paragraph{M-step} The objective factors over animals and timepoints as follows.
+\begin{align}
+    A(\theta; \theta^*) & = \sum_{n,t} \EE_{q_{n,t}} \log P(y_{n,t}, x_{n,t}, z_{n,t} \mid \theta) + \log P(\theta)
+\end{align}
+The summands are given by
+\begin{align}
+    \EE_{q_{n,t}} \log P(y_{n,t}, x_{n,t}, z_{n,t} \mid \theta) & = XXX \text{ involving } \mu, \Sigma, \lambda \label{eq:summand}
+\end{align}
+where $\mu, \Sigma, \lambda$ are defined in Eqs. \ref{eq:mu-defn}-\ref{eq:lambda-defn}. 
+
+\subsection{Initialization}
+Initialization of the morph parameters $\phi$ is described in section XXX. To initialize mixture model $(m, Q, \pi)$, we first calculate idealized poses $x_{n,t}$ using pseudo-inversion of the morph functions:
+\begin{align}
+    x_{n,t} & = C^+(\phi_n)(y_{n,t} - d(\phi_n))
+\end{align}
+and then fit a standard Gaussian mixture model (GMM) to the full set of $x_{n,t}$'s (e.g. with sklearn). The GMM yields mixture components $(m_z, Q_z), z=1,...,L$ and cluster weights $\lambda_{n,t,z}$ for each datapoint. The mixture weights $\pi, \beta$ are initilized from the cluster weights as follows:
+\begin{align}
+    \pi_{n,z} & = \frac{1}{T_n} \sum_{t=1}^{T_n} \lambda_{n,t,z} &
+    \beta_z & = \frac{1}{N} \sum_{n=1}^N \pi_{n,z} &
+\end{align}
+
+\section{Morph models}
+
+XXX
+
+\section{E-step derivation}
+
+XXX
+
+\section{M-step derivation}
+
+XXX
+
+\section{ORIGINAL TEXT FROM KAI}
 
 \subsection{Responsibilities of morph and pose space models in EM}
 
@@ -285,13 +336,6 @@ The proof is left to the reader, but is achieved by wrapping the whole expectati
     L_{\text{morph}}(\gamma) =& \sum_n \log\text{Dir}(\pi_n \mid \hat\pi\;\beta) + \log\text{Dir}(\beta\mid \hat\beta / L)
 \end{align}
 Note that the hyperparameters $\hat\beta$, $\hat\pi$ define the variation tolerable in the expected weight of each component and the variation tolerable from that mean respectively. In particular, $\EE[\beta]$ is the discrete uniform over $L$ choices, with $\text{Var}[\beta_l]$ inversely proportional to $\hat\beta + 1$. Moreover, $\EE[\pi_n] = \beta$ with $\text{Var}[\pi_{n, l}]$ inversely proportional to $\hat\pi + 1$.
-
-\textbf{Initialization}\quad We initialize the Gaussian mixture pose space model based on a standard Gaussian mixture model (GMM) fit to pose space data from a reference subject $\hat{n}$. Specifically, given parameters for a morph model, $\phi$, we form the dataset of pose space points $\cb{C_{\hat{n}}(\phi) y^t_n + d_{\hat{n}}(\phi)}_t$ and fit a GMM in $L$ components, yielding means $\hat{m}_z$, covariances $\hat{Q}_z$ and cluster weights $\hat\pi_z$. From these we may construct initialization parameters $\pi$ and $\psi$ as follows:
-\begin{itemize}
-    \item Component means and covariances of the pose space model are directly inherited from the reference-subject GMM. That is, $m_z = \hat{m}_z$ and $Q_z = \hat{Q}_z$.
-    \item The heirarchical Dirichlet prior is initialized so that $\pi_{n, z} = \hat{\pi}_z$ and so that the initial $\pi_n$'s are the mean of their generating distribution, i.e. we take the component weight logits as $\bar\pi_{n, z} = \log \hat\pi_z$, and we take $\bar\beta_z = \log \hat\pi_z$ so that $\EE[\text{Dir}(\hat\pi \beta)] = \pi_n$.
-\end{itemize}
-
 
 
 \end{document}
