@@ -47,7 +47,7 @@
 \DeclareMathOperator{\Tr}{Tr}
 \usepackage{titling}
 
-\title{Size norm model ideas}
+\title{Shape normalization for keypoint data}
 \author{Caleb Weinreb and Kai Fox}
 \date{May 2023}
 
@@ -58,74 +58,44 @@
 \section{Modeling framework}
 \label{sec:model-fwk}
 
-Suppose we have pose data $\{y_t\}_{t=1}^T$ and $\{y'_t\}_{t=1}^{T'}$ for a pair of animals, where $y_t, y'_t \in \mathbb{R}^{KD}$, represent the positions of $K$ keypoints in $D$ dimensions. For now, we will assume that the keypoints are in egocentric coordinates, meaning each animal is always centered and pointing in the same direction. Our goal is to define a canonical (low-dimensional) pose space that does not reflect body shape, and learn how to the data from each animal map onto it. Put in terms of generative modeling, we wish to explain each animal $n$ observed pose at time $t$, $y_n^t$, as the (noisy) realization of some latent pose state $x_n^t \in \mathbb{R}^M$, where the space of latent states is shared between animals.
+The goal of shape normalization is to map animal poses into a common (possibly low-dimensional) space where the effect of body shape has been removed. Naively, one might try to normalize using simple summary statistics like average nose-to-tail distance. The problem is, such statistics conflate body shape with behavior. For example, large average nose-to-tail distance could reflect a larger body, or simple a higher frequency of stretched-out poses. Thus the central challenge of shape normalization is to isolate the effects of behavior and body shape so that the latter can be cleanly factored out. To that end, we propose a generative model that embodies morphology and behavior in two separate sets of parameters and then fits them simultaneously to a dataset of measured poses from a population of animals.
+
+\subsection{Generative model}
+
+Formally, suppose that we measure the poses $\{y_{n,t}\}$ of animals $n=1,...,N$ at timepoints $t=1,...,T_n$ (the timepoints need not be sequential), where each pose $y_{n, t} \in \mathbb{R}^{KD}$ is a vector of $K$ keypoints in egocentric coordinates. We assume that each measured pose $y_{n,t}$ is the animal-specific realization of an idealized pose $x_{n,t} \in \mathbb{R}^M$ ($M \le KD$) as follows:
 %
 \begin{align}
-    y_1^t & = f_1(x_1^t) + \xi \ \text{where} \ 
-    \xi \sim \mathcal{N}(0, R) \ \text{and} \ 
-    x_1^t \sim P_1 \\
-    y_2^t & = f_2(x_2^t) + \xi \ \text{where} \ 
-    \xi \sim \mathcal{N}(0, R) \ \text{and} \ 
-    x_2^t \sim P_2
+    y_{n,t} & = f_n(x_{n,t}), \ x_{n,t} \sim P_n
 \end{align}
 %
-where $f_1, f_2$ are respective \textit{morph} functions mapping from the latent space to each animal's pose space, and $P_1, P_2$ are distributions over latent pose states. Ideally, we want $f_1$ and $f_2$ to capture morphological differences between the two animals, and $P_1, P_2$ to capture differences in the frequency of behaviors.
+where $\xi \sim \mathcal{N}(0, R)$ is measurement noise, $P_n$ is a distribution over idealized pose states, and $f_n$ is a \textit{morph} function that maps idealized poses to observed poses animal $n$. Our goal in fitting these parameters is to explain each animal's pose distribution through a combination of morphological and behavioral variation, embodied in the variables $f_n$ and $P_n$ repsectively. To encourage this partition, we assume that the $f_n$'s and $P_n$'s have a specific functional form defined below. 
 
-This formulation explicitly puts $f$ and $P$ in competition to explain variation in observed keypoint data as differences subject-wise body morphology or differences in occupancy of pose space. For example --- an animal with higher density in observation space where keypoints on the back are far apart could be due to a larger body or due to an upregulation of exploratory behavior such as rearing.
-
-We want to make sure that $f_1$ and $f_2$ are as similar as possible, i.e. to avoid mapping similar regions of latent pose space onto completely different bodily realizations for different animals or ``collapsing'' truly different observed postures onto the same latent poses. However, we also wish to keep $P_1$, $P_2$ as similar as possible to avoid trivial explanations that fail to unify variation across animals in the latent space. These desires will be encoded both in structural constraints on $f$ and $P$ such as the number of degrees of freedom in their parameterizations, and in hyperparameters on their parameter priors. Later work will specify a battery of controls to interrogate the correct amount of flexibility to afford $f$ and $P$ respectively for a given dataset.
-
-We take the approach of formulating general results with minimal specifications on $f$ and $P$, and developing a set of responsibilities that a particular \textit{pose space model} $P$ or \textit{morph model} $f$ must perform. This modular framework allows us to examine the ways that implicit assumptions in the structure of each model cause them to trade off explanation of the observed keypoint distributions. We will however work within a limited set of constraints on the kinds of models we consider.
-\begin{itemize}
-\item \textit{Affine morphs}. We assume that morphs may be written $f(x) = C x + d$ for a matrix $C\in \RR^{KD\times M}$ and a vector $d\in \RR^{KD}$. Note that linearity in this sense does not entail simple scaling and shearing in $D$-dimensional keypoint space, but should rather be thought of similarly to the linearity of PCA in that certain directions or \textit{modes} in latent pose space will correspond to certain postures in keypoint space. The specification of a different morph for each animal allows us to define the way those modes are realized on each body.
-
-\item \textit{Time independence}. A core simplifying assumption of all of our pose space models $F_n$ will be that $x^t$ for a given animal are i.i.d. over timesteps. In this way our model is a deepening of keypoint-moseq's affine transform from pose space to keypoint space $y \sim \NN(Cx+d, R)$, where we vary the transform per-mouse and investigate other transforms, while ignoring all dynamical character of behavior. 
-
-\item \textit{Phoneme variation.} We will consider pose space models that are common across animals, conditional upon an additional discrete latent variable $z$ specifying pose ``phonemes'' (\textit{po-nemes}, \textit{postu-nemes}?), much as the discrete variable in keypoint-moseq describes dynamical syllables. We allow the distribution of the discrete latent $z$ to vary per-animal, such that the flexibility of the pose space distribution $P$ is in defining the frequency of occupying a set of phonemes that are shared (up to body morphology) across the population.
-\end{itemize}
-With these structural assumptions, we may more formalize our generative modeling framework in more detail. 
-
-\textbf{Pose space:}\ \ A pose space model in our framework is a joint distribution over $x$ and $z$ for a single timepoint (extended i.i.d. to sequences). We parameterize such a model by $\gamma$ defining per-animal distributions $G_n$ of the discrete phoneme latent $z$, and parameters $\psi$ defining the distribution $F$ of latent pose states $x$, conditional on $z$. In this way a pose space model is given by a tuple of PDFs $(F, G_n)$ that together specify
+\textbf{Morph functions:}\ \ We assume each $f_n$ is an affine map with coefficients that depend on a parameter vector $\phi$. That is:
 \begin{align}
-    P_n(x, z) &= F(x \mid z, \psi)\,G_n(z \mid \gamma)
-    % F(\cdot \mid z, \psi)&:\ \RR^M \rightarrow \RR,\ \ G(\cdot \mid \gamma): \cal{Z} \rightarrow \RR
+    f_n(x) = C(\phi_n) x + d(\phi_n) 
 \end{align}
+Note that the affine assumption does not limit the morph functions to simple scalings and shears in $D$-dimensional keypoint space, but rather allows for complex, pose-dependent shifts of the keypoint coordinates. We do not specify the form of the mapping $\phi \mapsto (C(\phi), d(\phi))$ at this point. Several forms are considered in section XXX.
 
-\textbf{Morph:}\ \ A morph model in our framework is a per-animal affine map from latent pose space to noisy observations in keypoint space. We parameterize this map by a tuple $\phi$ which defines a matrix $C_n$ and a vector $d_n$ for subject $n$. A pose space model is therefore given by a tuple of functions $(C_n, d_n)$ mapping $\phi$ to $\RR^{KD\times M}$ and $\RR^{KD}$ respectively, that together specify
-\begin{align}
-    f_n(x_n^t) &= C_n(\phi)\, x_n^t + d_n(\phi)
-\end{align}
-
-The total parameter set for the combined model, including the observation covariance $R$, is therefore $\theta = (\gamma, \psi, \theta, R)$. The full model may therefore be written
-\begin{align}
-    z^t_n &\sim G_n(\,\cdot \mid \gamma) &
-    x^t_n &\sim F(\,\cdot \mid z^t_n, \psi) &
-    y^t_n &\sim \NN(C_n(\phi)\, x_n^t + d_n(\phi), R)
-    \label{eq:gen-model}
-\end{align}
-As we will see below, each morph model must simply compute the affine transformation specified by $C_n, d_n$, while most of the heavily lifting is left to the pose space models. In addition, we consider a log-prior defined separately for parameters of the pose and morph models $\log P(\theta) = L_{\text{pose}}(\gamma, \psi, R) + L_{\text{morph}}(\phi)$.
-
+\textbf{Pose distributon:}\ \ Animals of the same species typically share the same basic repertoire of poses and differ mainly in how often each pose is realized. To capture this structure, we assume that the distributions $P_n$ are Gaussian mixtures, where the mixture modes $\mathcal{N}(m_z, Q_z)$ are shared across animals. The mixture weights $\pi_n$ differ across animals but share a common prior $\beta$. Formally:
+\begin{align*}
+    x_{n,t} & \sim \mathcal{N}(m_{z_{n,t}}, Q_{z_{n,t}}), &
+    z_{n,t} & \sim \text{Cat}(\pi_n), &
+    \pi_n & \sim \text{Dir}(\beta), &
+    \beta & \sim \text{Dir}(\gamma,\dots,\gamma)
+\end{align*}
 
 \subsection{Expectation maximization}
 \label{sec:em-general}
 
-We fit our models using expectation maximization (EM). That is, we learn model parameters $\theta$ that maximize the log likelihood $\ell(\theta) = \log P(y, x, z\mid \theta)$ of all observed keypoints $y$ and latent pose states $(x, z)$ under particular set of model parameters $\theta$. In particular, we do so by taking the expectation of the log likelihood over the unknown values the latent pose states $(x, z)$ according to an auxiliary distribution $q(x, z | y, \theta^*) \propto P(x, z | y, \theta^*)$ defined by a current parameter estimate $\theta^*$. The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that taking this expectation produces a lower bound for the likelihood $\ell(\theta)$. Namely, given a prior $P(\theta)$,
+The model parameters $\theta = (\phi, m, Q, \pi, \beta)$ can be fit using expectation maximization (EM), which aims to maximize the expected log likelihood $\ell(\theta) = \EE_{x,z} \log P(y, x, z \mid \theta)$ by maintaining an auxiliary distribution $q(x, z \mid y, \theta^*)$ that approximates the posterior $P(x, z \mid y, \theta^*)$ for the current parameter estimate $\theta^*$. During each iteration of EM, the auxiliary distribution $q$ is updated (E-step), and then new parameters $\theta^*_{\text{new}}$ are calculated (M-step) by maximizing objective
 \begin{align}
-    \ell(\theta) \geq A(\theta, \theta^*) := \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) + \log P(\theta)
-    \label{eq:A-defn}
-\end{align}x
-The expectation maximization algorithm splits the problem of iteratively optimizing $\ell$ into two blocks: in the ``expectation'' step (E-step) we will calculate $q$ using our current parameter estimates $\theta^*$, so that in the ``maximization'' step (M-step) we can calculate $\argmax_\theta A(\theta, \theta^*)$ to arrive at new parameter estimates $\theta^*_{\text{new}}$:
-\begin{align}
-    \theta^*_{\text{new}} := \argmax_{\theta} \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) + \log P(\theta)\label{eq:em-argmax}
+    A(\theta; \theta^*) = \EE_{q(x, z | y, \theta^*)} \log P(y, x, z | \theta) + \log P(\theta)\label{eq:em-argmax}
 \end{align}
-The key theoretical guarantee is that the new parameter estimates monotonically increase in likelihood, that is $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$.
-
-The core simplifying assumption from Section \ref{sec:model-fwk} of independence across time allows us to write $q$ as a product distribution of i.i.d. latent variables $x, z$ at each time point. We write $q_n^t(x, z) = P(x_n^t = x, z_n^t = z \mid y_n^t, \theta^*)$. Rewriting Eq. \ref{eq:em-argmax} using this timepoint independence and expanding the expectation as an integral, we arrive at the formula that will be the basis for deriving each model's parameter updates:
+The theoretical basis for EM (see Murphy 11.4.7 [cite]) is that this procedure guarantees monotonic increases in the expected log likelihood, i.e. $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$. In our case, since the model likelihood factors over animals and timepoints, the objective can be rewritten as follows.
 \begin{align}
-    \theta^*_{\text{new}} := \argmax_{\theta} \sum_t \sum_{z} \int q_n^t(x, z)\, \log P(y_t, x, z | \theta) \; dx + \log P(\theta)\label{eq:em-int-argmax}
+    A(\theta; \theta^*) = \sum_{n,t,z}  \int_x q_{n,t}(x, z)\, \log P(y_{n,t}, x, z \mid \theta) \; dx + \log P(\theta)\label{eq:em-int-argmax}
 \end{align}
-
-For simple models, maximization of $A$ can be achieved analytically, but in general to improve model iteration speed we will handle the M-step using gradient ascent methods. The goal of our M-steps in this document will therefore be to calculate functional forms of $A$ that are compatible with numerical optimization packages. In particular, we must handle integrals of the log probability $\log P(y_t, x, z\mid \theta)$ against $q_n^t(x, z)$ analytically. This means also that our E-step will not take the standard form of computing probabilities $q_n^t$ for each value of the latent state $(x, z)$, but instead will involve precomputing values for the integral that are independent of $\theta$.
+Here we derive analytic expressions for the auxiliary distrubutions as well as the above integral, and perform the M-step using gradient ascent.
 
 
 \subsection{Responsibilities of morph and pose space models in EM}
