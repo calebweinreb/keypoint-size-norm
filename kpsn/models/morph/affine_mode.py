@@ -81,6 +81,11 @@ class AffineModeMorphHyperparams(NamedTuple):
 
 
 
+import platform
+__use_explicit_pseudoinverse = ( # avoid M1 chip crashes
+    platform.processor() == 'arm' and
+    (not jax.default_backend() == 'gpu')
+)
 
 def get_transform(
     params: AffineModeMorphParameters,
@@ -98,7 +103,11 @@ def get_transform(
 
     # Pesudoinverse and projection onto orthogonal complement of U
     modes = params.modes()
-    mp_inv = jla.pinv(modes) # (U^T U)^{-1} U^T, shape: (L, M)
+    if __use_explicit_pseudoinverse:
+        modes_rows = jnp.swapaxes(modes, -2, -1)
+        mp_inv = jla.inv(modes_rows @ modes) @ modes_rows
+    else:
+        mp_inv = jla.pinv(modes) # (U^T U)^{-1} U^T, shape: (L, M)
     orthog_proj = ( # I - U (U^T U)^{-1} U^T, shape: (M, M)
         jnp.eye(hyperparams.M) -
         modes @ mp_inv
@@ -190,7 +199,7 @@ def log_prior(
     # (normalized) update vector
     update_sqnorms = (params.updates() ** 2).sum(axis = 1) # (N, L)
     update_logpdf = -(update_sqnorms.sum() / 
-        hyperparams.update_scale ** (2 * hyperparams.M)) / 2
+        hyperparams.update_scale ** 2) / 2
     
     return dict(
         update_norm = update_logpdf,)

@@ -85,6 +85,7 @@ class PoseSpaceModel(NamedTuple):
     sample_parameters: Callable[..., PoseSpaceParameters]
     logprob_expectations: Callable[..., Float[Array, "Nt L"]]
     discrete_prob: Callable[..., Float[Array, "N L"]]
+    discrete_logits: Callable[..., Float[Array, "N L"]]
     aux_distribution: Callable[..., EMAuxPDF]
     log_prior: Callable[
         [PoseSpaceParameters, PoseSpaceHyperparams], 
@@ -103,13 +104,8 @@ def common_logprob_expectations(
     """
     Compute objective function terms shared across pose space models.
     """
-
-    # log Z_R constant in parameters, so ignored
-    # R_norm = ...
     
-    z_term = jnp.log(query_discrete_probs)[observations.subject_ids]
-
-    return z_term
+    return jnp.log(query_discrete_probs)[observations.subject_ids]
 
 
 

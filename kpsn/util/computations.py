@@ -1,12 +1,13 @@
 from typing import Tuple, Optional
 from jaxtyping import Float, Array, Integer, PRNGKeyArray as PRNGKey
 import jax.numpy as jnp
+import numpy as np
 import jax.random as jr
 import jax
 
 def quadform(
     a: Float[Array, "*#K M"],
-    B: Float[Array, "*#K M M"]
+    B: Float[Array, "*#K M M"],
     ) -> Float[Array, "*#K"]:
     """
     Batched computation of `a^T B a`.
@@ -29,7 +30,7 @@ def gaussian_product(
     B: Float[Array, "*#K M M"],
     Ainv: Optional[Float[Array, "*#K M M"]] = None,
     Binv: Optional[Float[Array, "*#K M M"]] = None,
-    return_normalizer: bool = False,
+    return_normalizer_log: bool = False,
     ) -> Tuple[Float[Array, "*#K"],
                Float[Array, "*#K M"],
                Float[Array, "*#K M M"]]:
@@ -48,7 +49,7 @@ def gaussian_product(
         B: Covariance of the second Gaussian PDF term.
         Ainv: Optional precomputed inverse of A.
         Binv: Optional precomputed inverse of B.
-        return_normalizer: Do not compute Gaussian normalizer terms for `const`.
+        return_normalizer_log: Do not compute Gaussian normalizer terms for `const`.
     
     Returns:
         const: Normalization constant for the resulting expression.
@@ -63,25 +64,35 @@ def gaussian_product(
     Cinv = Ainv + Binv
     c = (B @ sum_inv @ a[..., None] + A @ sum_inv @ b[..., None])[..., 0]
 
-    K = jnp.exp((
+    log_K = (
         quadform(a, Ainv) + quadform(b, Binv) - quadform(c, Cinv)
-    ) / (-2))
+    ) / (-2)
 
-    if return_normalizer:
-        normalizer = jnp.sqrt(
-            jnp.linalg.det(C) / jnp.linalg.det(A) / jnp.linalg.det(B) *
-            (2 * jnp.pi) ** (C.shape[-1] - A.shape[-1] - B.shape[-1])
+    if return_normalizer_log:
+        # normalizer = jnp.sqrt(
+        #     jnp.linalg.det(C) / jnp.linalg.det(A) / jnp.linalg.det(B) *
+        #     (2 * jnp.pi) ** (C.shape[-1] - A.shape[-1] - B.shape[-1])
+        # )
+        # All of A, B, C are covariance matrices and therefore
+        # have positive determinants
+        normalizer_log = 0.5 * (
+              jnp.linalg.slogdet(C)[1]
+            - jnp.linalg.slogdet(A)[1]
+            - jnp.linalg.slogdet(B)[1]
+            + jnp.log(2 * jnp.pi) * (
+                C.shape[-1] - A.shape[-1] - B.shape[-1]
+            )
         )
-        return K, c, C, normalizer
+        return log_K, c, C, normalizer_log
     
-    return K, c, C
+    return log_K, c, C
 
 
 def normal_quadform_expectation(
     a: Float[Array, "*#K M"],
     A: Float[Array, "*#K M M"],
     b: Float[Array, "*#K M"],
-    Binv: Float[Array, "*#K M M"],):
+    Binv: Float[Array, "*#K M M"]):
     r"""
     Compute expextation of a quadratic form in a normal RV.
 
@@ -257,7 +268,7 @@ def linear_transform_gaussian(
     Ainv: Float[Array, "*#K M M"] = None,
     cov_inv: Float[Array, "*#K M M"] = None,
     return_cov_inv = False,
-    return_normalizer = False,
+    return_normalizer_log = False,
     ) -> Tuple[Float[Array, "*#K M"], Float[Array, "*#K M M"]]:
     """
     Precompute the necessary values for $f(x)$ to be computed as a normal PDF
@@ -278,22 +289,22 @@ def linear_transform_gaussian(
     else:
         new_mean = (Ainv @ query_point[..., None])[..., 0]
     new_cov = Ainv @ cov @ jnp.swapaxes(Ainv, -2, -1)
-    
+
+    ret = (new_mean, new_cov)
     if return_cov_inv:
         if cov_inv is None: cov_inv = jnp.linalg.inv(cov)
         new_cov_inv = jnp.swapaxes(A, -2, -1) @ cov_inv @ A
-        
-        if return_normalizer:
-            normalizer = (jnp.linalg.det(new_cov) / jnp.linalg.det(cov)) ** 0.5
-            return new_mean, new_cov, new_cov_inv, normalizer
-        
-        return new_mean, new_cov, new_cov_inv
-
-    if return_normalizer:
-        normalizer = (jnp.linalg.det(new_cov) / jnp.linalg.det(cov)) ** 0.5
-        return new_mean, new_cov, normalizer
+        ret = ret + (new_cov_inv,)
     
-    return new_mean, new_cov
+    if return_normalizer_log:
+        # normalizer = (jnp.linalg.det(new_cov) / jnp.linalg.det(cov)) ** 0.5
+        normalizer_log = 0.5 * (
+            jnp.linalg.slogdet(new_cov)[1]
+          - jnp.linalg.slogdet(cov)[1]
+        )
+        ret = ret + (normalizer_log,)
+    
+    return ret
 
 
 def sq_mahalanobis(

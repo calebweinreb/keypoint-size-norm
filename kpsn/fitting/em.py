@@ -4,6 +4,7 @@ from functools import partial
 import jax.tree_util as pt
 import jax.random as jr
 import jax.numpy as jnp
+import jax.nn as jnn
 import numpy as np
 import optax
 import tqdm
@@ -35,8 +36,8 @@ def _check_should_stop_early(loss_hist, tol):
 
 
 def _point_weights(
-    aux_dist_consts: Float[Array, "Nt L"],
-    discrete_probs: Float[Array, "N L"],
+    aux_dist_log_consts: Float[Array, "Nt L"],
+    discrete_logits: Float[Array, "N L"],
     subject_ids: Integer[Array, "Nt"],
     ) -> Float[Array, "Nt L"]:
     """
@@ -56,11 +57,9 @@ def _point_weights(
     """
 
     # shape: (Nt, L)
-    unnormalized = aux_dist_consts * discrete_probs[subject_ids]
-    # shape: (1, L)
-    normalizers = unnormalized.sum(axis = 1, keepdims = True)
+    unnormalized = aux_dist_log_consts + discrete_logits[subject_ids]
 
-    return unnormalized / normalizers
+    return jnn.softmax(unnormalized, axis = 1)
 
 
 def _estep(
@@ -77,11 +76,12 @@ def _estep(
         observations, est_morph_matrix, est_morph_ofs,
         estimated_params.posespace, hyperparams.posespace
     )
-    est_discrete_probs = model.posespace.discrete_prob(
+    
+    est_discrete_logits = model.posespace.discrete_logits(
         estimated_params.posespace, hyperparams.posespace)
     term_weights: Float[Array, "Nt L"] = _point_weights(
         aux_pdf.consts,
-        est_discrete_probs,
+        est_discrete_logits,
         observations.subject_ids)
     
     return aux_pdf, term_weights
@@ -207,6 +207,7 @@ def _mstep(
     # ---- Run M-step iterations
 
     for step_i in iter:
+
         curr_params, opt_state, loss_value = step(
             opt_state, curr_params,
             emissions, hyperparams, aux_pdf, term_weights)

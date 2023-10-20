@@ -167,7 +167,7 @@ def aux_distribution(
 
     # Compute distribution in pose space including observation noise
     KD: int = morph_matrix.shape[1]
-    ps_mean, ps_cov, ps_cov_inv, normalizer = linear_transform_gaussian(
+    ps_mean, ps_cov, ps_cov_inv, ps_normalizer_log = linear_transform_gaussian(
         query_point = observations.keypts, # (Nt, KD)
         cov = hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
         cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
@@ -175,7 +175,7 @@ def aux_distribution(
         Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
         d = morph_ofs[observations.subject_ids], # (Nt, M) 
         return_cov_inv = True,
-        return_normalizer = True
+        return_normalizer_log = True
     )
     
     # Compute mean and covariances going into Gaussian product
@@ -189,22 +189,35 @@ def aux_distribution(
     # The transformation that turns the PDF in y into a PDF in x introduces
     # normalizer terms that cancel Z_A = Z_{C^{-1} R C^{-1}^T} and replace
     # it with a normalizer Z_R.
-    K, c, C, gp_norm = gaussian_product(a, A, b, B, Ainv = Ainv,
-        return_normalizer = True)
+    log_K, c, C, gp_normalizer_log = gaussian_product(a, A, b, B, Ainv = Ainv,
+        return_normalizer_log = True)
     
     # more efficient normalizer calculation that removes two determinant calls
-    # custom_norm = jnp.sqrt(
-    #     jnp.linalg.det(C) / jnp.linalg.det(B) / (hyperparams.eps ** KD) *
-    #     (2 * jnp.pi) ** (C.shape[-1] - B.shape[-1] - KD)
-    # )
+    combined_norm_log = (
+        ps_normalizer_log[:, None] +
+        gp_normalizer_log)
+    log_K += combined_norm_log
     
-    combined_norm = normalizer[:, None] * gp_norm
-    K *= combined_norm
-    
-    return GMMAuxPDF(consts = K, mean = c, cov = C)
+    return GMMAuxPDF(consts = log_K, mean = c, cov = C)
 
 
-def discrete_prob(
+def discrete_logits(
+    params: GMMParameters,
+    hyperparams: GMMHyperparams
+    ) -> Float[Array, "N L"]:
+    """
+    Probabilities across discrete pose space for each subject.
+    
+    Args:
+        params, hyperparams: Parameters of the mixture model.
+    
+    Returns:
+        probs: Probability distributions for each subject.
+    """
+    return params.logits()
+
+
+def discrete_probs(
     params: GMMParameters,
     hyperparams: GMMHyperparams
     ) -> Float[Array, "N L"]:
@@ -265,7 +278,7 @@ def logprob_expectations(
         Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
         d = morph_ofs[observations.subject_ids], # (Nt, M)
         return_cov_inv = True,
-        return_normalizer = False
+        return_normalizer_log = False
     )
 
     # ----- Compute expectation terms
@@ -279,9 +292,9 @@ def logprob_expectations(
     posespace_term = normal_quadform_expectation(
         aux_pdf.mean, aux_pdf.cov,
         query_params.means,
-        jnp.linalg.inv(query_Q)
+        jnp.linalg.inv(query_Q),
     )
-    posespace_norm = jnp.log(jnp.linalg.det(query_Q))
+    posespace_norm = jnp.linalg.slogdet(query_Q)[1]
     
     return (obs_term + posespace_term + posespace_norm) / (-2)
 
@@ -393,9 +406,9 @@ def sample_parameters(
 
     return GMMParameters(
         pop_weight_logits =
-            GMMParameters.normalize_logits(pop_weight_logits),
+            GMMParameters.normalize_pop_logits(pop_weight_logits),
         subj_weight_logits =
-            GMMParameters.normalize_pop_logits(subj_weight_logits),
+            GMMParameters.normalize_logits(subj_weight_logits),
         means = m,
         cholesky = Q_chol)
 
@@ -434,7 +447,9 @@ def init_parameters_and_latents(
     reference_subject: int,
     seed: int = 0,
     count_eps: float = 1e-3,
-    fit_to_all_subj: bool = False
+    fit_to_all_subj: bool = False,
+    subsample: float = False,
+    cov_eigenvalue_eps = 1e-3,
     ) -> Tuple[GMMParameters, GMMPoseStates]:
     """
     Initialize a GMMPoseSpaceModel based on observed keypoint data.
@@ -464,14 +479,23 @@ def init_parameters_and_latents(
     """
 
     # fit GMM to reference subject
+
+    if not fit_to_all_subj:
+        init_pts = observations.unstack(poses)[reference_subject]
+    else: init_pts = poses
+
+    if subsample is not False and subsample < 1:
+        init_pts = jr.choice(
+            jr.PRNGKey(seed),
+            init_pts,
+            (int(len(init_pts) * subsample),),
+            replace = False)
+    
     init_mix = mixture.GaussianMixture(
         n_components = hyperparams.L, 
         random_state = nr.RandomState(seed),
     )
-    if not fit_to_all_subj:
-        init_pts = observations.unstack(poses)[reference_subject]
-        init_mix = init_mix.fit(init_pts)
-    else: init_mix = init_mix.fit(poses)
+    init_mix = init_mix.fit(init_pts)
 
     # get component labels & counts across all subjects
     init_components = observations.unstack(
@@ -483,7 +507,18 @@ def init_parameters_and_latents(
             return_counts = True)
         init_counts[i_subj][uniq] = count
     init_counts[init_counts == 0] = count_eps
-    
+
+    # Correct any negative eigenvalues
+    # In the case of a non positive semidefinite covariance output by
+    # the GMM fit (happens in moderate dimensionality), snap to the
+    # nearest (in Frobenius norm) symmetric matrix with eigenvalues
+    # not less than `cov_eigenvalue_eps`
+    cov_vals, cov_vecs = jnp.linalg.eigh(init_mix.covariances_)
+    if jnp.any(cov_vals < 0):
+        clipped_vals = jnp.clip(cov_vals, cov_eigenvalue_eps)
+        init_mix.covariances_ = (
+            (cov_vecs[1] * clipped_vals[..., None, :]) @
+            jnp.swapaxes(cov_vecs[1], -2, -1))
     return GMMParameters(
         subj_weight_logits = jnp.log(init_counts),
         pop_weight_logits = jnp.log(init_counts[reference_subject]),
@@ -547,7 +582,8 @@ GMMPoseSpaceModel = PoseSpaceModel(
     sample = sample,
     sample_parameters = sample_parameters,
     logprob_expectations = logprob_expectations,
-    discrete_prob = discrete_prob,
+    discrete_logits = discrete_logits,
+    discrete_prob = discrete_probs,
     aux_distribution = aux_distribution,
     log_prior = log_prior,
     init = init_parameters_and_latents,
