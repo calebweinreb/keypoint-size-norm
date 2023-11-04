@@ -58,284 +58,86 @@
 \section{Modeling framework}
 \label{sec:model-fwk}
 
-The goal of shape normalization is to map animal poses into a common (possibly low-dimensional) space where the effect of body shape has been removed. Naively, one might try to normalize using simple summary statistics like average nose-to-tail distance. The problem is, such statistics conflate body shape with behavior. For example, large average nose-to-tail distance could reflect a larger body, or simple a higher frequency of stretched-out poses. Thus the central challenge of shape normalization is to isolate the effects of behavior and body shape so that the latter can be cleanly factored out. To that end, we propose a generative model that embodies morphology and behavior in two separate sets of parameters and then fits them simultaneously to a dataset of measured poses from a population of animals.
+The goal of shape normalization is to map keypoint observations from many animals into a standardized pose space where the effects of body morphology have been removed. Naively, one might hope to normalize using simple summary statistics like average nose-to-tail distance. But these statistics are problematic because they conflate body shape with behavior. For example, larger average nose-to-tail distance could reflect a larger body, or simply a higher frequency of stretched-out poses. Thus the central challenge of shape normalization is to isolate the effects of behavior and body shape so that the latter can be cleanly removed. To that end, we propose a generative model that factors behavior and morphology into separate terms that are disentangled during fitting.
+
+\subsection{Input data}
+
+We consider a dataset of poses $\{y_{n,t}\} \subset \mathbb{R}^{KD}$ measured from animals $n=1,\dots,N$ at timepoints $t=1,\dots,T_n$ (the timepoints need not be sequential), where each pose contains coordinates of $K$ keypoints in $D$ dimensions. We assume that the keypoints are already centered and rotationally aligned, and that differences in body size have already been minimized as much as possible through uniform scaling of each animal. 
 
 \subsection{Generative model}
+\label{sec:gen-model}
 
-Formally, suppose that we measure the poses $\{y_{n,t}\}$ of animals $n=1,...,N$ at timepoints $t=1,...,T_n$ (the timepoints need not be sequential), where each pose $y_{n, t} \in \mathbb{R}^{KD}$ is a vector of $K$ keypoints in egocentric coordinates. We assume that each measured pose $y_{n,t}$ is the animal-specific realization of an idealized pose $x_{n,t} \in \mathbb{R}^M$ ($M \le KD$) as follows:
+We model each pose $y_{n,t}$ as the animal-specific realization of a standardized pose $x_{n,t}$ that is sampled from a Gaussian mixture. The mixture components are shared across animals, but the mixture weights are animal-specific. Formally, the model is
 %
-\begin{align}
-    y_{n,t} & = f_n(x_{n,t}), \ x_{n,t} \sim P_n
-\end{align}
-%
-where $\xi \sim \NN(0, R)$ is measurement noise, $P_n$ is a distribution over idealized pose states, and $f_n$ is a \textit{morph} function that maps idealized poses to observed poses animal $n$. Our goal in fitting these parameters is to explain each animal's pose distribution through a combination of morphological and behavioral variation, embodied in the variables $f_n$ and $P_n$ repsectively. To encourage this partition, we assume that the $f_n$'s and $P_n$'s have a specific functional form defined below. 
-
-\textbf{Morph functions:}\ \ We assume each $f_n$ is an affine map with coefficients that depend on a parameter vector $\phi$. That is:
-\begin{align}
-    f_n(x) = C(\phi_n) x + d(\phi_n) 
-\end{align}
-Note that the affine assumption does not limit the morph functions to simple scalings and shears in $D$-dimensional keypoint space, but rather allows for complex, pose-dependent shifts of the keypoint coordinates. We do not specify the form of the mapping $\phi \mapsto (C(\phi), d(\phi))$ at this point. Several options are described in section XXX.
-
-\textbf{Pose distributon:}\ \ Animals of the same species typically share the same basic repertoire of poses and differ mainly in how often each pose is realized. To capture this structure, we assume that the distributions $P_n$ are Gaussian mixtures, where the mixture modes $\NN(m_z, Q_z), z=1,...,L$ are shared across animals. The mixture weights $\pi_n$ differ across animals but share a common prior $\beta$. 
 \begin{align*}
-    x_{n,t} & \sim \NN(m_{z_{n,t}}, Q_{z_{n,t}}), &
-    z_{n,t} & \sim \text{Cat}(\pi_n), &
-    \pi_n & \sim \text{Dir}(\beta), &
+    y_{n,t} & = f(x_{n,t}, \phi_n) 
+        && \text{(observed pose given standardized pose)} \\
+    x_{n,t} & \sim \NN(m_{z_{n,t}}, Q_{z_{n,t}}) 
+        && \text{(standardized pose given mixture component)}  \\
+    z_{n,t} & \sim \text{Cat}(\pi_n)  
+        && \text{(mixture component given animal-specific weights)} \\
+    m_z & \sim \NN(m_0, \lambda_0^{-1} Q_z) 
+        && \text{(prior on mixture means given covariances)} \\
+    Q_z & \sim \text{Wishart}^{-1}(W_0, \nu_0) 
+        && \text{(prior on mixture covariances)} \\
+    \pi_n & \sim \text{Dir}(\beta)
+        && \text{(prior on animal-specific mixture weights)} \\
     \beta & \sim \text{Dir}(\gamma,\dots,\gamma)
-\end{align*}
-We also assume a normal-inverse-wishart (NIW) prior on the mixture modes:
-\begin{align*}
-    m_z \mid Q_z & \sim \NN(m_0, \lambda_0^{-1} Q_z), &
-    Q_z & \sim \text{Wishart}^{-1}(W_0, \nu_0) &
-\end{align*}
+        && \text{(prior on mixture weight hyperparameters)}
+\end{align*}   
+%
+where $f$ is a morph function that maps standardized poses $x_{n,t}$ to animal-specific poses $y_{n,t}$ and $\phi_n$ is a parameter vector that captures the unique shape of animal $n$. Several forms for $f$ (and priors on $\phi_n$) are described in Section XXX and tested in the paper. In general, $f$ should be invertible in its first argument and differentiable in its second. Abusing notation, we will use $f^{-1}$ to denote the inverse of $f$ in its first argument.
+
+
 
 \subsection{Expectation maximization}
 \label{sec:em-general}
 
-The model parameters $\theta = (\phi, m, Q, \pi, \beta)$ can be fit using expectation maximization (EM), which aims to maximize the expected log likelihood $\ell(\theta) = \EE_{x,z} \log P(y, x, z \mid \theta)$. EM alternates between two steps: compute the posterior distribution $q(x, z) = P(x, z \mid y, \theta^*)$ given the current parameter estimates $\theta^*$ (E-step), and updating the parameter estimates $\theta^*_\text{new}$ by maximizing the following objective with respect to $\theta$ (M-step):
-\begin{align}
-    A(\theta; \theta^*) = \EE_{q(x,z)} \log P(y, x, z \mid \theta) + \log P(\theta)
-    \label{eq:A-defn}
-\end{align}
-The theoretical basis for EM is that this procedure guarantees monotonic increases in the expected log likelihood, i.e. $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$ (see Murphy 11.4.7 [cite]). Here we derive an analytic expressions for $q(x, z)$ and $A(\theta; \theta^*)$ and then perform the M-step optimization using gradient ascent. Detailed derivations are given in sections XXX-XXX.
+The model parameters $\theta = (\phi, m, Q, \pi, \beta)$ are fit using expectation maximization (EM), which aims to maximize the expected log likelihood $\ell(\theta) = \EE \log P(y, z \mid \theta)$. EM alternates between two steps.
 
-\paragraph{E-step} For fixed parameters $\theta^* = (\phi^*, m^*, Q^*, \pi^*, \beta^*)$, the pairs $(x_{n,t}, z_{n,t})$ are conditionally independent across animals and timepoints, meaning $q(x, z)$ factors as follows.
+
+% EM iteratively computes a posterior $q(z) = P(z \mid y, \theta^*)$ given the current parameter estimates $\theta^*$ (E-step), and then finds new parameter estimates $\theta^*_\text{new}$ by maximizing the following objective with respect to $\theta$ (M-step).
+% \begin{align}
+%     A(\theta; \theta^*) = \EE_{q(z)} \log P(y, z \mid \theta) + \log P(\theta)
+%     \label{eq:A-defn}
+% \end{align}
+% The theoretical basis for EM is that this procedure guarantees monotonic increases in the expected log likelihood, i.e. $\ell(\theta^*_{\text{new}}) \geq \ell(\theta^*)$ (see Murphy 11.4.7 [cite]). Expressions for $q(z)$ and $A(\theta; \theta^*)$ are given below. We perform the M-step optimization with gradient ascent. 
+
+\paragraph{E-step} Given current parameter estimates $\theta^* = (\phi^*, m^*, Q^*, \pi^*, \beta^*)$, calculate the posterior $q(z) = P(z \mid y, \theta^*)$, as follows.
+%
 \begin{align}
-    q(x, z) = \prod_{n,t} q_{n,t}(x_{n,t}, z_{n,t})
-\end{align}
-Each factor $q_{n,t}$ is proportional to a Gaussian in $x$:
-\begin{align}
-    q_{n,t}(x_{n,t}, z_{n,t}) & = \NN(x_{n,t} \mid \mu, \Sigma) \cdot \lambda
-\end{align}
-where
-\begin{align}
-    \mu & = XXX \label{eq:mu-defn} \\
-    \Sigma & = XXX \label{eq:Sigma-defn} \\
-    \lambda & = XXX \label{eq:lambda-defn}
+    q(z) & = \prod_{n,t} P(z_{n,t} \mid y_{n,t}, \phi^*, m^*, Q^*, \pi^*) \\
+    & \propto  \prod_{n,t}  \NN(f^{-1}(y_{n,t}, \phi^*_n) \mid m_{z_{n,t}^*}, Q_{z_{n,t}^*}) \cdot \pi_{n,z_{n,t}}^* \label{eq:q-propto-statement}
 \end{align}
 
-\paragraph{M-step} The objective factors over animals and timepoints as follows.
+\paragraph{M-step} Given $q(z)$ from the E-step, obtain new parameter estimates by optimizing the following objective with respect to $\theta = (\phi, m, Q, \pi, \beta)$ (using gradient ascent).
 \begin{align}
-    A(\theta; \theta^*) & = \sum_{n,t} \EE_{q_{n,t}} \log P(y_{n,t}, x_{n,t}, z_{n,t} \mid \theta) + \log P(\theta)
+    A(\theta; \theta^*) & = \sum_{n,t} \EE_q \log P(y_{n,t}, z_{n,t} \mid \theta) + \log P(\theta) \\
+    & =  \sum_{n,t} q(z_{n,t}) \left[ \log \NN(f^{-1}(y_{n,t}, \phi_n) \mid m_{z_{n,t}}, Q_{z_{n,t}}) + \log \pi_{n, z_{n, t}} \right] + \log P(\theta) \label{eq:A-modeled}
 \end{align}
-The summands are given by
-\begin{align}
-    \EE_{q_{n,t}} \log P(y_{n,t}, x_{n,t}, z_{n,t} \mid \theta) & = XXX \text{ involving } \mu, \Sigma, \lambda \label{eq:summand}
-\end{align}
-where $\mu, \Sigma, \lambda$ are defined in Eqs. \ref{eq:mu-defn}-\ref{eq:lambda-defn}. 
 
 \subsection{Initialization}
-Initialization of the morph parameters $\phi$ is described in section XXX. To initialize mixture model $(m, Q, \pi)$, we first calculate idealized poses $x_{n,t}$ using pseudo-inversion of the morph functions:
+Initialization of the morph parameters $\phi$ is described in section XXX. Given morph parameters, we fit a standard Gaussian mixture model to the points $x_{n,t} = f^{-1}(y_{n,t}, \phi_n)$ (e.g. with sklearn), yielding mixture components $(m_z, Q_z), z=1,...,L$ and cluster weights $\lambda_{n,t,z}$ for each data point. Using the weights, we initialize $\pi$ and $\beta$ as follows.
 \begin{align}
-    x_{n,t} & = C^+(\phi_n)(y_{n,t} - d(\phi_n))
-\end{align}
-and then fit a standard Gaussian mixture model (GMM) to the full set of $x_{n,t}$'s (e.g. with sklearn). The GMM yields mixture components $(m_z, Q_z), z=1,...,L$ and cluster weights $\lambda_{n,t,z}$ for each datapoint. The mixture weights $\pi, \beta$ are initilized from the cluster weights as follows:
-\begin{align}
-    \pi_{n,z} & = \frac{1}{T_n} \sum_{t=1}^{T_n} \lambda_{n,t,z} &
-    \beta_z & = \frac{1}{N} \sum_{n=1}^N \pi_{n,z} &
+    \pi_{n,z} = \frac{1}{T_n} \sum_{t=1}^{T_n} \lambda_{n,t,z}, \quad \beta_z = \frac{1}{N} \sum_{n=1}^N \pi_{n,z}
 \end{align}
 
 \section{Morph models}
 
 XXX
 
-\section{E-step derivation}
 
-XXX
+\section{E-step}
 
-\section{M-step derivation}
-
-XXX
-
-\section{ORIGINAL TEXT FROM KAI}
-
-\subsection{Responsibilities of morph and pose space models in EM}
-
-The majority of the calculations in both the E- and M-steps can be performed in terms of the affine map $(C_n, d_n)$ and therefore may be posed as responsibilities of the pose space model, given the affine map produced by the morph model as input. The only responsibilities of the morph model are to calculate these matrices and vectors, evaluate priors and initializations for the parameters, and to provide convenience functions such as finding maximum likelihood estimates of latents given observations and parameters.
-
-The requirements of the pose space model on the other hand are to calculate priors, initializations, and convenience functions as the morph model does, but also to evaluate the objective function $A$ of the maximization routine in Eq. \ref{eq:em-int-argmax}. We now expand upon the framework for analytically integrating our problematic integral. In doing so we enumerate both the necessary arithmetic results to derive for the M-step of each pose space model, and the computations to be performed in their E-steps.
-
-The theoretical guarantees of EM are achieved by taking the latent distribution to be the log likelihood of the latents given the observations and current parameter estimates $\theta^*$, which is usually calculated using Bayes' rule
+In the E-step we seek to calculate $q_{n, t}(z) = P(z\mid y_{n, t},\,\theta^*)$ for a given keypoint observation $y_{n, t}$ and estimated parameters $\theta^*$. This is usually done using Bayes' rule
 \begin{align}
-    q_n^t(x, z) = P(x, z \mid y_n^t, \theta^*) &= \frac{P(y_n^t, x \mid z, \theta^*) P(z\mid \theta^*)}{P(y_n^t \mid \theta^*)}
-    \label{eq:q-general}
+    q_{n,t}(z) = P(z\mid y_{n, t}, \theta^*) = \frac{P(y_{n, t}\mid z,\,\theta^*)P(z\mid \theta^*)}{\sum_{z'} P(y_{n, t}\mid z',\,\theta^*)P(z'\mid \theta^*)}
 \end{align}
-For integration in $x$, this fraction breaks down as a normalizer times $P(y_n^t, x \mid z, \theta^*)$. As shown below, that probability the product the normal PDF around $f(x)$ giving the probability of the noisy observation $y_n^t$ and the probability of the pose state $x$ given by $F$. It will be the central task of the M-step to rewrite that product in turn as a constant in $x$ times an auxiliary probability distribution $s$ to be integrated against the data likelihood $\log P(y_n^t, x, z \mid \theta)$:
+Each probability above is given directly by the generative model (Sec \ref{sec:gen-model}), and so may be expanded as
 \begin{align}
-    P(y_n^t, x \mid z, \theta^*) &= P(y_n^t \mid x, \theta^*) P(x\mid z, \theta^*) \\
-    &= \NN(y_n^t\mid C_n(\phi^*)\, x + d_n(\phi^*), R^*) F(x\mid z, \psi^*) \label{eq:norm-F-prod} \\
-    &:=  K_{y_n^t, z, \theta^*}\cdot s(x;\, y_n^t, z, \theta^*)
-    \label{eq:s-defn}
+    q_{n,t}(z) = \frac{ \NN(f^{-1}(y_{n,t}, \phi^*_n) \mid m_{z}^*, Q_{z}^*) \cdot \pi_{n,z}^* }{ \sum_{z'} \NN(f^{-1}(y_{n,t}, \phi^*_n) \mid m_{z'}^*, Q_{z'}^*) \cdot \pi_{n,z'}^* }
 \end{align}
-We expand upon the requirement that $s(x)$ be a PDF in which expectations of the log probability terms arising from the data likelihood are known below in %\ref{sec:}
-Note that for brevity we write $s, K$ as functions of $\theta$, however by Eq. \ref{eq:norm-F-prod} they are functions only of $(\psi^*, R^*, C_n(\phi^*), d_n(\phi^*))$ and therefore may be evaluated by the morph model operating only on the affine transform output by an arbitrary pose space model.
-
-We find that these constants $K$ and expectations in $s$, together with the finite array of probabilities for the discrete latents $G_n(z \mid \gamma)$, are sufficient to express the objective function $A(\theta; \theta^*)$. The remaining term in the numerator of $q_n^t$ in Eq. \ref{eq:q-general}, $P(z\mid \theta^*)$, is simply $G(z\mid \gamma^*)$. Additionally, marginalizing Eq. \ref{eq:s-defn} over $x$ shows that the constants $K$ are in fact the probabilities $P(y_n^t \mid z, \theta^*)$, so the denominator $P(y_n^t \mid \theta^*)$ of $q_n^t$ in Eq. \ref{eq:q-general} may be expanded by the law of total probability as $\sum_z K_{y_n^t, z, \theta^*} G(z\mid \gamma^*)$. The objective function as defined in Eq. \ref{eq:A-defn} may therefore be written
-\begin{equation}
-    A(\theta; \theta^*) = \sum_{t, n}\sum_z  \frac{K_{y^t_n, z, \theta^*} G(z\mid \gamma^*)}{\sum_{z'} K_{y^t_n, z', \theta^*}  G(z'\mid\gamma^*)}\ \EE_{s(x;\, y^t_n, z, \theta^*)}\bc{\log P(y^t_n, x, z \mid \theta)} + \log P(\theta) \label{eq:A-tractable}
-\end{equation}
-
-Using Eq. \ref{eq:A-tractable}, we may state explicitly the arithmetic work to be done in deriving a pose space model and the computations that a pose space model must perform during an EM iteration in our modeling framework:
-
-\textbf{Derivation:}\ \ A pose space model must define $(F, G)$, and rewrite the product of $F$ with a Gaussian probability as a constant $K$ times a PDF $s(x)$, as in Eq. \ref{eq:s-defn}. Closed form integrals of $s$ against the two terms outlined in Sec. \ref{sec:s} must be derived.
-
-\textbf{E step:}\ \  A pose space model must, during the E-step, calculate the constants $K_{y_n^t,z,\theta^*}$ as a function of the estimated parameters $\theta^*$ resulting in an $\RR^{|y|\times |z|}$ matrix, where $|y|$ is the number of observed samples and $|z|$ is the cardinality of the discrete latent ``phoneme'' space. The function $s$ will be defined parametrically, and during the E-step a pose space model must also calculate the $\RR^{|y|\times |z|}$ matrix of parameters as a function of $\theta^*$.
-
-\textbf{M step:}\ \ A pose space model will use the derived closed form expectations as functions of $\theta$ and $s$ (parameterized as the results of the E-step) alongside the constants $K$ calculated in the E-step to compute the objective function Eq. \ref{eq:A-tractable} during the M-step. General model-agnostic methods will perform gradient-based maximization based on this output.
-
-\subsection{Requirements for the auxiliary distribution of a pose model}
-\label{sec:s}
-
-It is crucial for each pose space model to formulate an auxiliary PDF $s$ for which the expectations in the rewritten objective function (Eq. \ref{eq:A-tractable}) have a closed form expression. To elaborate on this constraint, we expand the log probability of the data using the structure of our generative model (Eq. \ref{eq:gen-model}): 
-\begin{align}
-    \log P(y^t_n, x, z \mid \theta) &= \log P(y^t_n \mid x, \theta) + \log P(x\mid z, \theta) + \log P(z\mid \theta) \\
-    &= \log \NN(y^t_n \mid C_n(\phi)\, x + d_n(\phi), R) + \log F(x\mid z,\psi) + \log G(z \mid \gamma)
-    \label{eq:logprob-terms}
-\end{align}
-Of these, only the first two are functions of $x$ and thereby impose a requirement on $s(x)$ of having a known closed form expectation.
-
-It will in general be necessary when finding the closed form expectations to recognize that the first term may be written as a normal PDF in $x$ by transforming the normal distribution of $y$ around $f(x)$ to a scaled normal distribution of $x$ around $f\inv(y)$. Let $\norm{a - b}_A$ is the Mahalanobis distance of $a, b$ according to covariance $A$. Then, dropping the dependence of $C_n, d_n$ on $\phi$ for readability,
-\begin{align}
-    \log \NN(y\mid C_n\, x + d_n, R) &= \log\pn{\frac{Z_{R}}{Z_{C_n\inv R {C_n^T}\inv}} \NN\pn{x\mid C_n\inv \pn{y - d_n},\; C_n\inv R\, {C_n^T}\inv}} \\ &= \log Z_{R} - \frac{1}{2}\norm{x - C_n\inv (y - d_n)}^2_{C_n\inv R\, {C_n^T}\inv}
-    \label{eq:cn-swap}
-\end{align}
-The result is an unnormalized Gaussian log probability to be integrated against $s(x)$ and a normalizer term that may be computed independent of the morph model. For completeness, we now explicate a proof general inversion of an affine-transformed Gaussian PDF:
-\begin{proof} For vectors $x\in \RR^M$ and $y\in \RR^N$ and matrices $A\in \RR^{N\times M}, B\in \RR^{N\times N}$, we may expand a normal PDF as a normalizer times a squared Mahalanobis distance:
-    \begin{align}
-        \NN(y\mid Ax, B) &= Z_{B} \exp\cb{-\frac{1}{2}\norm{y - Ax}^2_{B}} \\
-        &= Z_{B} \exp\cb{-\frac{1}{2}(y - Ax)^TB\inv(y - Ax)} \\
-        &= Z_{B} \exp\cb{-\frac{1}{2}(A\inv y - x)^TA^TB\inv A(A\inv y - x)} \\
-        &= Z_{B} \exp\cb{-\frac{1}{2}\norm{A\inv y - x}^2_{A\inv B{A\inv}^T}} \\
-        &= \frac{Z_{B}}{Z_{A\inv B{A\inv}^T}} \NN\pn{x\mid A\inv y, \; A\inv B{A\inv}^T}
-    \end{align}
-Additionally, for $x,y,z$ in $\RR^N$ and $B\in\RR^{N\times N}$, $\NN(x - z \mid y, B) = \NN(x \mid y+z, B)$. Applying these two identities yields Eq. \ref{eq:cn-swap}.
-\end{proof}
-
-To summarize, during the derivation of a pose space model, expectations in the random variable $x\sim s$ of the following terms must be derived as closed-form expressions. Note that while $s$ is defined in terms of estimated parameters $\theta^*$, the following terms are functions of test parameters $\theta$ during gradient based optimization of $A$.
-\begin{itemize}
-    \item The Gaussian log-PDF centered at morphed latent poses $f(x) = C_n x + d_n$ with observation covariance $R$ evaluated at observations $y_n^t$. This PDF breaks down as in Eq. \ref{eq:cn-swap} into a quadratic form and a Gaussian normalizer $\log Z_R$ that is constant in $x$.
-    \item The log-PDF of the pose space distribution $F(x\mid z, \psi)$ at a latent pose $x$ under given discrete pose state $z$ and test parameters $\psi$.
-\end{itemize}
-
-
-\section{Morph models}
-
-\subsection{Scalar morph}
-
-Before introducing spatially nonlinear morphs, we begin by working with a simple uniform scale around an affine offset. Letting the morph model be parameterized by scalars $\alpha_n$ and offsets $\mu_n\in \RR^N$, we take $C_n(\phi) = e^{\alpha_n} I_{KD}$, and $d_n(\phi) = \mu_n$. Using this scalar morph the latent pose space dimension cannot compress keypoint space, so $M = KD$.
-
-\textbf{Priors}\quad As will be standard for most morph models, we define a prior to remove ambiguity both in the offsets $\mu_n$ and the scale parameters $\alpha_n$. In particular, if $\bar{\mu}(\phi)$, $\bar{\alpha}(\phi)$ are the average offset $\EE_n\bc{\mu_n(\phi)}$ and log-scale, respectively, then the prior on $\phi$ for the scalar morph is
-\begin{align}
-    L_{\text{morph}}(\phi) &= \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} \\
-    &= -\frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 - \frac{1}{2}\bar{\alpha}(\phi)^2
-    \label{eq:d-alpha-prior}
-\end{align}
-
-\textbf{Initialization}\quad We initialize offsets to the subject-wise mean in keypoint space $\mu_n = \EE_t[y^t_n]$ and log-scale factors to the MLE of standard deviation for a spherical Gaussian centered at $\mu_n$ given the subject's keypoint data, $\alpha_n = \frac{1}{2}\log\EE_t[\norm{y^t_n - \mu_n}_2^2]$
-
-\subsection{Affine modal alignment}
-
-The first (dare I say ...only?) spatially non-rigid morph we will consider is an affine linear transform which aligns a limited number of dimensions around a centroid. We first give the intuition for this model, then define it and specify priors and an initialization routine.
-
-As in the scalar morph model, we make the assumption that all latent poses for a subject are related to their keypoints by the same offset and scaling, i.e. that there is a certain homologous centroid pose that varies per-animal and that each animal is characterized by a scale of variations from that centroid. In addition, we consider that there might be variations from the centroid that differ by subject but should also be considered homologous --- for example large mice might turn more sharply to follow the same path, or that the limbs of older mice might take flatter trajectories when walking if their bodies are held lower to the ground. We therefore allow variation of a certain number, $L$, of posture \textit{modes} to be mapped differently from latent pose space to each animal's body. We may represent a pose as a magnitude of variation from the centroid along each of these dimensions (as is done in PCA) along with an additional $(KD-L)$-dimensional component describing the remaining variation, which we leave unaltered when mapping from pose space to keypoint space.
-
-Let $L$ be an integer d.o.f. hyperparameter giving the number of pose modes to be aligned. In this case, we define the morph model in terms of the following parameters
-\begin{itemize}
-    \item $\bar\alpha\in\RR$ - log of the subject-wise uniform scale factor $\alpha = e^{\bar{\alpha}}$ to be applied to all dimensions of pose space
-    \item $U\in \RR^{KD\times L}$ - matrix whose columns give the population-wide modes in pose space that may be morphed differently per-animal. \textit{In the special case where the columns of $U$ are the first $L$ principal components and are considered a hyperparameter instead of being learned, we call this morph a ``PC modal alignment''}.
-    \item $\hat{U}_n\in\RR^{KD \times L}$ - matrix whose columns, $\hat{u_{n, l}}$, give subject-wise updates to the morph dimensions.
-    \item $\mu_n\in \RR^{KD}$ - center of the affine transform, so that $d_n(\phi) = \mu_n$. 
-\end{itemize}
-
-Let $\bar{U}$ be the projection on to the orthogonal complement of $U$, which will be used as a pass-through for those dimensions of pose space that should be effected only by uniform scaling. Using these parameters, the modal alignment morph is the affine map given by the matrix $C_n(\phi)$ and the vector $d_n(\phi)$:
-\begin{align}
-    C_n(\phi) &= \alpha_n \bc{ \bar{U} + \pn{U + \hat{U}_n}U^+ } &\text{\ with\ } \phi &= (U, \bar\alpha_n, \hat{U}_n, \mu_n,\ n\in1...N)
-    \\
-    d(\phi_n) &= \mu_n & \alpha_n &= \exp\pn{\bar\alpha_n}
-    \\
-    && \hat{u}_{n, l} &= (\hat{U}_{n})_{:,l} \sim \NN(0, \upsilon^2 I_{KD}) 
-\end{align}
-
-
-To understand the action of the morph, consider the $L=2$ case in which the columns of $U$, which we call $u_1$ and $u_2$, are orthonormal. Let $\hat{u}_1, \hat{u}_2$ be the updates to the morph dimensions for subject $n$. Then the action of $C(\phi_n)$ on $\text{span}(u_1, u_2)$ - the subspace spanned by the morph dimensions - is a perturbation of the symmetric matrix with SVD $U (\alpha I_{KD}) U^T$, namely
-\begin{align}
-    C(\phi_n) : x\in \text{span(U)} \mapsto \bc{\mat{ | & | \\ u_1 + \hat{u}_1 & u_2 + \hat{u}_2 \\ | & |  }}
-    \bc{\mat{ \alpha & \\ & \alpha }}
-    \bc{\mat{ - & u_1^T & - \\ - & u_2^T & -}}x
-\end{align}
-The action of $C(\phi_n)$ on the orthogonal complement of $U$ should then be the identity. Removing the requirement of orthogonal morph dimensions, and considering vectors outside the span of those morph dimensions, we have the general expression:
-\begin{align}
-    C(\phi_n) = \alpha \bc{ \bar{U} + \pn{U + \hat{U}_n}\text{Diag}\pn{s_n}U^+ }
-\end{align}
-with $U^+$ being the Moore-Penrose pseudoinverse of U.
-
-\textbf{Priors}\quad We inherit the normal priors on the average offset and log-scale to remove ambiguity in $\mu_n$ and $\alpha_n$ as in Eq. \ref{eq:d-alpha-prior}. In addition, we include a Gaussian prior on the mode adjustments, the columns of the matrix $\hat{U}_n$ which we call $u_{n,l}$,  after scaling by the norm of the corresponding mode $u_l$, the $l$-th column of the matrix $U$, according to a scale hyperparameter $\upsilon$. Finally, we remove symmetry in $\norm{u_l}$ and arrive at the following morph parameter log likelihood function:
-\begin{align}
-    L_{\text{morph}}(\phi) =& \log \NN\pn{\bar{\mu}(\phi) \mid 0, I_{KD}} + \log \NN\pn{\bar{\alpha}(\phi) \mid 0, I_1} \\
-    &+ \sum_{n,l=1}^{N,L}\log \NN(u_{n,l}, 0, \upsilon^2 I_{KD}) + \sum_{l=1}^L \log\NN(\log \norm{u_l}, 0, 1)\\
-    &= -\frac{1}{2}\norm{\bar{\mu}(\phi)}_2^2 - \frac{1}{2}\bar{\alpha}(\phi)^2 - \frac{1}{2\upsilon^{2KD}}\sum_{n,l=1}^{N,L}\norm{u_{n, l}}_2^2 \norm{u_l}_2^{-2} - \frac{1}{2}\sum_{l=0}^1 \log^2 \norm{u_l}
-\end{align}
-
-
-
-\section{Pose space models}
-
-
-\subsection{Gaussian mixture}
-
-In the Gaussian mixture model, our discrete latent ``phoneme'' state is categorical over $L$ values  (a hyperparameter) which we term components as in a standard GMM. The discrete distribution weights subject to a heirarchical Dirichlet prior with hyperparameters for usage uniformity across components, $\hat\beta$, component usage uniformity across animals $\hat\pi$, and a saturation level for logits $\pi_{\text{max}}$. Our continuous pose state is normal, with mean and covariance conditional on the discrete state.
-\begin{align*}
-    G\pn{z \mid \gamma} &= \text{Cat}(\pi_n) & \text{with\ }&\gamma = (\bar\beta\in \RR^L, \bar\pi_n \in \RR^L,\ n\in1...N) \\
-    &&& \beta = \text{softmax}(\bar\beta),\ \beta \sim \text{Dir}(\hat\beta) \\
-    &&& \pi_n = \text{softmax}( \pi_{\text{max}}\text{tanh}( \bar\pi_n / \pi_{\text{max}})),\ \pi_n \sim \text{Dir}(\hat\pi\;\gamma) \\
-    F(x \mid z, \psi) &= \NN(m_z, Q_z) & \text{with\ }&\psi = ((m_z, Q_z) \in \RR^{M} \times \RR^{M\times M},\ z\in 1 ... L)
-\end{align*}
-
-
-\subsubsection{Auxiliary PDF and constants}
-
-Our first task is to rewrite the product of $F$ and a normal PDF in $y_n^t$, from Eq. \ref{eq:norm-F-prod}, as a constant $K$ times a PDF $s(x)$. Since $F$ is itself Gaussian in this case, we may apply the same transformation as in \ref{eq:cn-swap} to arrive at a product of two Gaussians in $x$, which is proportional to another normal PDF in $x$. The following proposition specifies the proportionality constant.
-\begin{proposition}
-    The product normal PDFs evaluated at a point, $\NN(x\mid a, A)$ and $\NN(x\mid b, B)$, is proportional to $ \NN(x\mid c, C)$ with and $C = A\pn{A + B}\inv B$ and $c = CA\inv a + CB\inv b$. Moreover, if $Z_\Sigma = \pn{2\pi}^{-D/2}\abs{\Sigma}^{-1/2}$ is the usual Gaussian normalization factor for covariance matrix $\Sigma$, then equality is achieved using the following proportionality constant:
-    \begin{align}
-        \NN(x\mid a, A) \NN(x\mid b, B) = \frac{Z_AZ_B}{Z_C} \exp\cb{-\frac{1}{2}\pn{a^TA\inv a \,+\, b^TB\inv b \,-\, c^T C\inv c}} \NN(x\mid c, C).
-        \label{eq:norm-prod}
-    \end{align}
-    \label{thm:norm-prod}
-\end{proposition}
-\begin{proof}
-The proportionality result is standard, so we leave that proof to the reader and use the result to derive our proportionality constant. Let $\norm{x-a}^2_A = (x - a)A\inv (x - a)^T$ be the squared Mahalanobis distance between $x$ and $a$ under covariance $A$, so that $\NN(x\mid a, A) = Z_{A}\exp(-\frac{1}{2}\norm{x-a}^2_A)$. The normalizing constant may therefore be written
-\begin{align}
-    \frac{\NN(x\mid a, A)\NN(x\mid b, B)}{\NN(x\mid c, C)} &= \frac{Z_AZ_B}{Z_C} \exp\cb{-\frac{1}{2}\pn{\norm{x - a}^2_A + \norm{x - b}^2_B - \norm{x - c}^2_C}}
-\end{align}
-Expanding the Mahalanobis distances, we see that the remaining terms are precisely those which to not vary in $x$ (which is natural given the proportionality result) yielding the desired result.
-\end{proof}
-
-
-The terms $K_{y^t_n, z, \theta_{C, n}}$ and $s(x;\, y^t_n, z, \theta^*)$ for the Gaussian mixture pose space model may be calculated using Proposition \ref{thm:norm-prod} by inverting the affine transform of $x$ in Eq. \ref{eq:norm-F-prod} and applying it to $y_n^t$, as in \ref{eq:cn-swap}. The mean and covariances of the constituent normals are then given in the language of the proposition by $a = C_n\inv (y + d_n)$, $A = C_n\inv R\, {C_n^T}\inv$, $b = m_z$, and $B = Q_z$, with dependence of $C_n, d_n$ on $\phi^*$ suppressed for readability, leaving $s$ to be the normal PDF $N(x\mid c, C)$ and $K$ to be the proportionality constant in Eq. \ref{eq:norm-prod}.
-
-
-\subsubsection{Expectations of log probabilities}
-
-It remains to be seen that $s$ can be analytically integrated against the requisite log probability terms: the quadratic form from Eq. \ref{eq:cn-swap} and $\log F$, which is also a quadratic form here. To calculate these integrals, we will use the following proposition.
-\begin{proposition}
-\label{prop:norm-quad-expect-2}
-The expectation of a quadratic form in a normal variable is the sum of a Mahalanobis distance and a trace:
-\begin{align}
-    \EE_{x\sim\NN(a, B)} \bc{(x - c)^T D\inv (x - c)} = \norm{a - c}^2_D + \Tr\bc{BD\inv}
-\end{align}
-\end{proposition}
-The proof is left to the reader, but is achieved by wrapping the whole expectation in a trace and cycling its arguments to arrive at an outer product $(x - c)(x - c)^T$. We may now enumerate the log probability terms that are to be calculated by the Gaussian mixture pose space model:
-\begin{itemize}
-    \item The expectation in $s$ of the quadratic form from Eq. \ref{eq:cn-swap} is given by the proposition, scaled by $-\frac{1}{2}$
-    \item The expectation in $s$ of $\log F$ splits into two terms. First, we have the expectation of the quadratic form $-\frac{1}{2}\norm{x - m_z}^2_{Q_z}$, which is again given by the scaled result of the composition. Additionally, there is a term $\log Z_{Q_z} \propto -\frac{1}{2}\log\abs{Q_z}$ which is constant in $x$ and so is its own expectation.
-\end{itemize}
-
-\textbf{Priors}\quad We impose a heirarchical Dirichlet prior on the component weights $\pi_n$, but we do not constrain the parameters of the component distributions $m_z, Q_z$. This results in the following log-prior for the Gaussian mixture pose model:
-\begin{align}
-    L_{\text{morph}}(\gamma) =& \sum_n \log\text{Dir}(\pi_n \mid \hat\pi\;\beta) + \log\text{Dir}(\beta\mid \hat\beta / L)
-\end{align}
-Note that the hyperparameters $\hat\beta$, $\hat\pi$ define the variation tolerable in the expected weight of each component and the variation tolerable from that mean respectively. In particular, $\EE[\beta]$ is the discrete uniform over $L$ choices, with $\text{Var}[\beta_l]$ inversely proportional to $\hat\beta + 1$. Moreover, $\EE[\pi_n] = \beta$ with $\text{Var}[\pi_{n, l}]$ inversely proportional to $\hat\pi + 1$.
+which yields the proportionality result stated in Eq. \ref{eq:q-propto-statement} with the additional specification of normalization so that $q_{n,t}$ is a probability distribution in $z$.
 
 
 \end{document}
