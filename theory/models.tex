@@ -65,6 +65,7 @@ The goal of shape normalization is to map keypoint observations from many animal
 We consider a dataset of poses $\{y_{n,t}\} \subset \mathbb{R}^{KD}$ measured from animals $n=1,\dots,N$ at timepoints $t=1,\dots,T_n$ (the timepoints need not be sequential), where each pose contains coordinates of $K$ keypoints in $D$ dimensions. We assume that the keypoints are already centered and rotationally aligned, and that differences in body size have already been minimized as much as possible through uniform scaling of each animal. 
 
 \subsection{Generative model}
+\label{sec:gen-model}
 
 We model each pose $y_{n,t}$ as the animal-specific realization of a standardized pose $x_{n,t}$ that is sampled from a Gaussian mixture. The mixture components are shared across animals, but the mixture weights are animal-specific. Formally, the model is
 %
@@ -106,17 +107,17 @@ The model parameters $\theta = (\phi, m, Q, \pi, \beta)$ are fit using expectati
 %
 \begin{align}
     q(z) & = \prod_{n,t} P(z_{n,t} \mid y_{n,t}, \phi^*, m^*, Q^*, \pi^*) \\
-    & \propto  \prod_{n,t}  \NN(f^{-1}(y_{n,t}, \phi^*_n) \mid m_{z_{n,t}^*}, Q_{z_{n,t}^*}) \cdot \pi_{n,z_{n,t}}^*
+    & \propto  \prod_{n,t}  \NN(f^{-1}(y_{n,t}, \phi^*_n) \mid m_{z_{n,t}^*}, Q_{z_{n,t}^*}) \cdot \pi_{n,z_{n,t}}^* \label{eq:q-propto-statement}
 \end{align}
 
 \paragraph{M-step} Given $q(z)$ from the E-step, obtain new parameter estimates by optimizing the following objective with respect to $\theta = (\phi, m, Q, \pi, \beta)$ (using gradient ascent).
 \begin{align}
     A(\theta; \theta^*) & = \sum_{n,t} \EE_q \log P(y_{n,t}, z_{n,t} \mid \theta) + \log P(\theta) \\
-    & =  \sum_{n,t} q(z_{n,t}) \left[ \log \NN(f^{-1}(y_{n,t}, \phi_n) \mid m_{z_{n,t}}, Q_{z_{n,t}}) + \log \pi_{n, z_{n, t}} \right] + \log P(\theta)
+    & =  \sum_{n,t} q(z_{n,t}) \left[ \log \NN(f^{-1}(y_{n,t}, \phi_n) \mid m_{z_{n,t}}, Q_{z_{n,t}}) + \log \pi_{n, z_{n, t}} \right] + \log P(\theta) \label{eq:A-modeled}
 \end{align}
 
 \subsection{Initialization}
-Initialization of the morph parameters $\phi$ is described in section XXX. Given morph parameters, we fit a standard Gaussian mixture model to the points $x_{n,t} = f^{-1}(y_{n,t}, \phi_n)$ (e.g. with sklearn), yielding mixture components $(m_z, Q_z), z=1,...,L$ and cluster weights $\lambda_{n,t,z}$ for each datapoint. Using the weights, we initialize $\pi$ and $\beta$ as follows.
+Initialization of the morph parameters $\phi$ is described in section XXX. Given morph parameters, we fit a standard Gaussian mixture model to the points $x_{n,t} = f^{-1}(y_{n,t}, \phi_n)$ (e.g. with sklearn), yielding mixture components $(m_z, Q_z), z=1,...,L$ and cluster weights $\lambda_{n,t,z}$ for each data point. Using the weights, we initialize $\pi$ and $\beta$ as follows.
 \begin{align}
     \pi_{n,z} = \frac{1}{T_n} \sum_{t=1}^{T_n} \lambda_{n,t,z}, \quad \beta_z = \frac{1}{N} \sum_{n=1}^N \pi_{n,z}
 \end{align}
@@ -124,6 +125,19 @@ Initialization of the morph parameters $\phi$ is described in section XXX. Given
 \section{Morph models}
 
 XXX
+
+
+\section{E-step}
+
+In the E-step we seek to calculate $q_{n, t}(z) = P(z\mid y_{n, t},\,\theta^*)$ for a given keypoint observation $y_{n, t}$ and estimated parameters $\theta^*$. This is usually done using Bayes' rule
+\begin{align}
+    q_{n,t}(z) = P(z\mid y_{n, t}, \theta^*) = \frac{P(y_{n, t}\mid z,\,\theta^*)P(z\mid \theta^*)}{\sum_{z'} P(y_{n, t}\mid z',\,\theta^*)P(z'\mid \theta^*)}
+\end{align}
+Each probability above is given directly by the generative model (Sec \ref{sec:gen-model}), and so may be expanded as
+\begin{align}
+    q_{n,t}(z) = \frac{ \NN(f^{-1}(y_{n,t}, \phi^*_n) \mid m_{z}^*, Q_{z}^*) \cdot \pi_{n,z}^* }{ \sum_{z'} \NN(f^{-1}(y_{n,t}, \phi^*_n) \mid m_{z'}^*, Q_{z'}^*) \cdot \pi_{n,z'}^* }
+\end{align}
+which yields the proportionality result stated in Eq. \ref{eq:q-propto-statement} with the additional specification of normalization so that $q_{n,t}$ is a probability distribution in $z$.
 
 
 \end{document}
