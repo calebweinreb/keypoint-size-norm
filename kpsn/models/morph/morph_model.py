@@ -4,11 +4,14 @@ import jax.numpy as jnp
 
 from ..pose import Observations
 
+
 class MorphParameters(Protocol):
     """
     Parameter set for a general morph model.
     """
-    pass
+    def with_hyperparams(self, hyperparams):
+        return MorphAllParameters(self, hyperparams)
+
 
 class MorphHyperparams(Protocol):
     """
@@ -21,7 +24,13 @@ class MorphHyperparams(Protocol):
     M: int
 
 
+class MorphAllParameters(Protocol):
+    params: MorphParameters
+    hyperparams: MorphHyperparams
+
+
 class MorphModel(NamedTuple):
+    ParameterClass: type
     sample_parameters: Callable[..., MorphParameters]
     get_transform: Callable[
         [MorphParameters, MorphHyperparams],
@@ -36,18 +45,16 @@ class MorphModel(NamedTuple):
     def pose_mle(
         self,
         observations: Observations,
-        params: MorphParameters,
-        hyperparams: MorphHyperparams
+        params: MorphAllParameters,
         ) -> Float[Array, "Nt M"]:
-        C, d = self.get_transform(params, hyperparams)
+        C, d = self.get_transform(params)
         Cinv = jnp.linalg.inv(C)[observations.subject_ids]
         d = d[observations.subject_ids]
         return (Cinv @ (observations.keypts - d)[..., None])[..., 0]
     
     def pose_mle_from_array(
         self,
-        hyperparams: MorphHyperparams,
-        params: MorphParameters,
+        params: MorphAllParameters,
         keypoints: Float[Array, "*#K KD"],
         subject_ids: Integer[Array, "*#K"]
         ) -> Float[Array, "*#K M"]:
@@ -56,15 +63,14 @@ class MorphModel(NamedTuple):
         return self.pose_mle(Observations(
             keypoints.reshape(-1, keypoints.shape[-1]),
             subject_ids.reshape(-1,)
-        ), params, hyperparams).reshape(subject_ids.shape + (hyperparams.M,))
+        ), params).reshape(subject_ids.shape + (params.M,))
 
     def transform(
         self,
-        hyperparams: MorphHyperparams,
-        params: MorphParameters,
+        params: MorphAllParameters,
         poses: Float[Array, "*#K M"],
         subject_ids: Integer[Array, "*#K"]
         ) -> Float[Array, "*#K KD"]:
-        C, d = self.get_transform(params, hyperparams)
+        C, d = self.get_transform(params)
         return (C[subject_ids] @ poses[..., None])[..., 0] + d[subject_ids]
     

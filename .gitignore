@@ -1,6 +1,7 @@
 **/.DS_Store
 testing
 update_pypi.sh
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -30,7 +31,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-__init__.py
+/__init__.py
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

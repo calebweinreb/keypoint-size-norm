@@ -6,7 +6,9 @@ import jax
 from ...util.computations import unstack
 
 
-class PoseSpaceParameters(Protocol): pass
+class PoseSpaceParameters(Protocol):
+    def with_hyperparams(self, hyperparams):
+        return PoseSpaceAllParameters(self, hyperparams)
 
 
 class PoseSpaceHyperparams(Protocol):
@@ -24,6 +26,11 @@ class PoseSpaceHyperparams(Protocol):
     eps: int
 
 
+class PoseSpaceAllParameters(Protocol):
+    params: PoseSpaceParameters
+    hyperparams: PoseSpaceHyperparams
+
+
 class PoseStates(Protocol):
     """
     Latent variables arising from a pose space model.
@@ -31,6 +38,7 @@ class PoseStates(Protocol):
     :param poses: Pose space states resulting from the GMM.
     """
     poses: Float[Array, "Nt M"]
+
 
 
 class Observations(NamedTuple):
@@ -80,11 +88,13 @@ class EMAuxPDF(NamedTuple):
 
 
 class PoseSpaceModel(NamedTuple):
+    ParameterClass: type
     discrete_mle: Callable[..., PoseStates]
     sample: Callable[..., Tuple[PoseStates, Integer[Array, "Nt"]]]
     sample_parameters: Callable[..., PoseSpaceParameters]
     logprob_expectations: Callable[..., Float[Array, "Nt L"]]
     discrete_prob: Callable[..., Float[Array, "N L"]]
+    discrete_logits: Callable[..., Float[Array, "N L"]]
     aux_distribution: Callable[..., EMAuxPDF]
     log_prior: Callable[
         [PoseSpaceParameters, PoseSpaceHyperparams], 
@@ -103,13 +113,8 @@ def common_logprob_expectations(
     """
     Compute objective function terms shared across pose space models.
     """
-
-    # log Z_R constant in parameters, so ignored
-    # R_norm = ...
     
-    z_term = jnp.log(query_discrete_probs)[observations.subject_ids]
-
-    return z_term
+    return jnp.log(query_discrete_probs)[observations.subject_ids]
 
 
 
@@ -118,8 +123,7 @@ def objective(
     observations: Observations,
     query_morph_matrix: Float[Array, "N KD M"],
     query_morph_ofs: Float[Array, "N KD M"],
-    query_params: PoseSpaceParameters,
-    hyperparams: PoseSpaceHyperparams,
+    params: PoseSpaceAllParameters,
     aux_pdf: EMAuxPDF,
     term_weights: Float[Array, "Nt L"],
     ) -> Scalar:
@@ -134,11 +138,11 @@ def objective(
     model_log_exp: Float[Array, "Nt L"] = posespace_model.logprob_expectations(
         observations,
         query_morph_matrix, query_morph_ofs,
-        query_params, hyperparams, aux_pdf
+        params, aux_pdf
     )
     common_logprob_expect: Float[Array, "Nt L"] = common_logprob_expectations(
         observations,
-        posespace_model.discrete_prob(query_params, hyperparams)
+        posespace_model.discrete_prob(params)
     )
 
     # ----- Sum terms and return

@@ -7,10 +7,9 @@ import jax.numpy.linalg as jla
 import jax
 import scipy.stats
 
-from .morph_model import MorphModel
+from .morph_model import *
 from ..pose import Observations
 from ...util import pca
-
 
 class AffineModeMorphParameters(NamedTuple):
     """
@@ -21,10 +20,10 @@ class AffineModeMorphParameters(NamedTuple):
     :param modes: Morph dimensions across the full population.
     :param updates: Updates to the morph modes for each subject.
     """
-    p_uniform_scale: Float[Array, "N"]
-    p_modes: Float[Array, "M L"]
-    p_updates: Float[Array, "N M L"]
-    p_offsets: Float[Array, "N M"]
+    uniform_scale: Float[Array, "N"]
+    modes: Float[Array, "M L"]
+    updates: Float[Array, "N M L"]
+    offsets: Float[Array, "N M"]
     
     @staticmethod
     def create(
@@ -33,32 +32,13 @@ class AffineModeMorphParameters(NamedTuple):
         updates: Float[Array, "N M L"],
         offsets: Float[Array, "N M"]):
         return AffineModeMorphParameters(
-            p_uniform_scale = AffineModeMorphParameters.normalize_scale(uniform_scale),
-            p_modes = AffineModeMorphParameters.normalize_modes(modes),
-            p_updates = updates,
-            p_offsets = AffineModeMorphParameters.normalize_offsets(offsets))
-    
+            uniform_scale = AffineModeMorphAllParameters.normalize_scale(uniform_scale),
+            modes = AffineModeMorphAllParameters.normalize_modes(modes),
+            updates = updates,
+            offsets = AffineModeMorphAllParameters.normalize_offsets(offsets))
 
-    def uniform_scale(self): 
-        return AffineModeMorphParameters.normalize_scale(self.p_uniform_scale)
-    def modes(self):
-        return AffineModeMorphParameters.normalize_modes(self.p_modes)
-    def updates(self): return self.p_updates
-    def offsets(self):
-        return AffineModeMorphParameters.normalize_offsets(self.p_offsets)
-    
-    @staticmethod
-    def normalize_scale(scales):
-        return scales - scales.mean()
-    
-    @staticmethod
-    def normalize_modes(modes):
-        return modes / jnp.linalg.norm(modes, axis = -2, keepdims = True)
-
-    @staticmethod
-    def normalize_offsets(offsets):
-        return offsets #- offsets.mean(axis = -1, keepdims = True)
-
+    def with_hyperparams(self, hyperparams):
+        return AffineModeMorphAllParameters(self, hyperparams)
 
 
 class AffineModeMorphHyperparams(NamedTuple):
@@ -79,12 +59,62 @@ class AffineModeMorphHyperparams(NamedTuple):
     update_scale: Scalar
     modes: Union[Float[Array, "M L"], None]
 
+    def as_static_dynamic_parts(self):
+        return ((self.N, self.M, self.L),
+                (self.update_scale, self.modes))
+    
+    @staticmethod
+    def from_static_dynamic_parts(static, dynamic):
+        return AffineModeMorphHyperparams(
+            N = static[0], M = static[1], L = static[2],
+            update_scale = dynamic[0], modes = dynamic[1])
 
 
+class AffineModeMorphAllParameters(NamedTuple):
+    params: AffineModeMorphParameters
+    hyperparams: AffineModeMorphHyperparams
+
+    # hyperparameter passthroughs
+    N = property(lambda self: self.hyperparams.N)
+    M = property(lambda self: self.hyperparams.M)
+    L = property(lambda self: self.hyperparams.L)
+    update_scale = property(lambda self: self.hyperparams.update_scale)
+
+    # normalized parameters
+    def uniform_scale(self): 
+        return AffineModeMorphAllParameters.normalize_scale(self.params.uniform_scale)
+    def modes(self):
+        if self.hyperparams.modes is None: unnormalized = self.params.modes
+        else: unnormalized = self.hyperparams.modes
+        return AffineModeMorphAllParameters.normalize_modes(unnormalized)
+    def updates(self): return self.params.updates
+    def offsets(self):
+        return AffineModeMorphAllParameters.normalize_offsets(self.params.offsets)
+    
+    @staticmethod
+    def normalize_scale(scales):
+        return scales - scales.mean()
+    
+    @staticmethod
+    def normalize_modes(modes):
+        return modes / jnp.linalg.norm(modes, axis = -2, keepdims = True)
+
+    @staticmethod
+    def normalize_offsets(offsets):
+        return offsets #- offsets.mean(axis = -1, keepdims = True)
+    
+    HyperparamClass = AffineModeMorphHyperparams
+    ParamClass = AffineModeMorphParameters
+
+
+import platform
+__use_explicit_pseudoinverse = ( # avoid M1 chip crashes
+    platform.processor() == 'arm' and
+    (not jax.default_backend() == 'gpu')
+)
 
 def get_transform(
-    params: AffineModeMorphParameters,
-    hyperparams: AffineModeMorphHyperparams,
+    params: AffineModeMorphAllParameters,
     ) -> Tuple[Float[Array, "N M M"], Float[Array, "N M"]]:
     """
     Calculate the linear transform defining the morph model
@@ -98,9 +128,13 @@ def get_transform(
 
     # Pesudoinverse and projection onto orthogonal complement of U
     modes = params.modes()
-    mp_inv = jla.pinv(modes) # (U^T U)^{-1} U^T, shape: (L, M)
+    if __use_explicit_pseudoinverse:
+        modes_rows = jnp.swapaxes(modes, -2, -1)
+        mp_inv = jla.inv(modes_rows @ modes) @ modes_rows
+    else:
+        mp_inv = jla.pinv(modes) # (U^T U)^{-1} U^T, shape: (L, M)
     orthog_proj = ( # I - U (U^T U)^{-1} U^T, shape: (M, M)
-        jnp.eye(hyperparams.M) -
+        jnp.eye(params.M) -
         modes @ mp_inv
     )
     
@@ -116,12 +150,12 @@ def get_transform(
     
     return (
         # (N, M, M) + (1, M, M)
-        (rot + orthog_proj[None]) *
+        # (rot + orthog_proj[None]) *
         # (N, 1, 1)
-        jnp.exp(params.uniform_scale())[:, None, None]
-        # jnp.stack([
-        #     jnp.eye(hyperparams.M)
-        #     for _ in range(hyperparams.N)])
+        # jnp.exp(params.uniform_scale())[:, None, None]
+        jnp.stack([
+            jnp.eye(params.M)
+            for _ in range(params.N)])
     ), params.offsets()
 
 
@@ -180,8 +214,7 @@ def sample_parameters(
 
 
 def log_prior(
-    params: AffineModeMorphParameters,
-    hyperparams: AffineModeMorphHyperparams,
+    params: AffineModeMorphAllParameters,
     morph_matrix: Float[Array, "N KD M"] = None,
     morph_ofs: Float[Array, "N KD"] = None
     ):
@@ -190,18 +223,17 @@ def log_prior(
     # (normalized) update vector
     update_sqnorms = (params.updates() ** 2).sum(axis = 1) # (N, L)
     update_logpdf = -(update_sqnorms.sum() / 
-        hyperparams.update_scale ** (2 * hyperparams.M)) / 2
+        params.update_scale ** 2) / 2
     
     return dict(
         update_norm = update_logpdf,)
 
 
 def reports(
-    hyperparams: AffineModeMorphHyperparams,
-    params: AffineModeMorphParameters
+    params: AffineModeMorphAllParameters
     ) -> dict:
     return dict(
-        priors = log_prior(params, hyperparams))
+        priors = log_prior(params))
 
 
 def init(
@@ -213,7 +245,7 @@ def init(
     
     # Calculate offsets
     subjwise_keypts = observations.unstack(observations.keypts)
-    offsets = 0*jnp.stack([
+    offsets = jnp.stack([
         subj_kpts.mean(axis = 0) for subj_kpts in subjwise_keypts])
     
     # Calculate uniform_scale
@@ -228,7 +260,7 @@ def init(
     scales_log = scales_log - scales_log.mean()
     
     # Calculate modes
-    pcs = pca.fit(keypts_centered[reference_subject], centered = True)
+    pcs = pca.fit(keypts_centered[reference_subject], sign_correction = None)
     modes = pcs.pcs()[:hyperparams.L, :].T
 
     return AffineModeMorphParameters.create(
@@ -237,8 +269,10 @@ def init(
         updates = jnp.zeros([hyperparams.N, hyperparams.M, hyperparams.L]),
         offsets = offsets
     )
-    
+
+  
 AffineModeMorph = MorphModel(
+    ParameterClass = AffineModeMorphAllParameters,
     sample_parameters = sample_parameters,
     get_transform = get_transform,
     log_prior = log_prior,
@@ -246,9 +280,9 @@ AffineModeMorph = MorphModel(
     reports = reports
 )
 
+
 def mode_components(
-    params: AffineModeMorphParameters,
-    hyperparams: AffineModeMorphHyperparams,
+    params: AffineModeMorphAllParameters,
     poses: Float[Array, "*#K M"]
     ) -> Tuple[Float[Array, "*#K L"], Float[Array, "*#K M L"], Float[Array, "*#K M-L"]]:
     """
@@ -268,48 +302,85 @@ def mode_components(
 
 
 def as_offset_only(
-    params: AffineModeMorphParameters,
-    hyperparams: AffineModeMorphHyperparams,
-    ) -> Tuple[AffineModeMorphParameters, AffineModeMorphHyperparams]:
-    return (
-        AffineModeMorphParameters(
-            p_uniform_scale = 0 * params.p_uniform_scale,
-            p_modes = params.p_modes,
-            p_updates = 0 * params.p_updates,
-            p_offsets = params.p_offsets),
-        hyperparams)
+    params: AffineModeMorphAllParameters,
+    ) -> AffineModeMorphAllParameters:
+    params, hyperparams = params.params, params.hyperparams
+    return AffineModeMorphAllParameters(
+        params = AffineModeMorphParameters(
+            uniform_scale = 0 * params.uniform_scale,
+            modes = params.modes,
+            updates = 0 * params.updates,
+            offsets = params.offsets),
+        hyperparams = hyperparams)
 
     
 def as_uniform_scale(
-    params: AffineModeMorphParameters,
-    hyperparams: AffineModeMorphHyperparams,
-    ) -> Tuple[AffineModeMorphParameters, AffineModeMorphHyperparams]:
-    return (
-        AffineModeMorphParameters(
-            p_uniform_scale = params.p_uniform_scale,
-            p_modes = params.p_modes,
-            p_updates = 0 * params.p_updates,
-            p_offsets = params.p_offsets),
-        hyperparams)
+    params: AffineModeMorphAllParameters,
+    ) -> AffineModeMorphAllParameters:
+    params, hyperparams = params.params, params.hyperparams
+    return AffineModeMorphAllParameters(
+        params = AffineModeMorphParameters(
+            uniform_scale = params.uniform_scale,
+            modes = params.modes,
+            updates = 0 * params.updates,
+            offsets = params.offsets),
+        hyperparams = hyperparams)
+
+
+def with_scaled_modes(
+    scale_factor: float,
+    params: AffineModeMorphAllParameters,
+    ) -> AffineModeMorphAllParameters:
+    params, hyperparams = params.params, params.hyperparams
+    return AffineModeMorphAllParameters(
+        params = AffineModeMorphParameters(
+            uniform_scale = params.uniform_scale,
+            modes = params.modes,
+            updates = scale_factor * params.updates,
+            offsets = params.offsets),
+        hyperparams = hyperparams)
 
 
 def with_sliced_modes(
-    params: AffineModeMorphParameters,
-    hyperparams: AffineModeMorphHyperparams,
+    params: AffineModeMorphAllParameters,
     slc: slice
-    ) -> Tuple[AffineModeMorphParameters, AffineModeMorphHyperparams]:
-    return (
-        AffineModeMorphParameters(
-            p_uniform_scale = params.p_uniform_scale,
-            p_modes = params.p_modes[:, slc],
-            p_updates = params.p_updates[:, :, slc],
-            p_offsets = params.p_offsets),
-        AffineModeMorphHyperparams(
+    ) -> AffineModeMorphAllParameters:
+    params, hyperparams = params.params, params.hyperparams
+    if hyperparams.modes is None:
+        param_modes = params.modes[:, slc]
+        hyper_modes = None
+        L = param_modes.shape[-1]
+    else:
+        param_modes = params.modes
+        hyper_modes = hyperparams.modes[:, slc]
+        L = hyper_modes.shape[-1]
+    return AffineModeMorphAllParameters(
+        params = AffineModeMorphParameters(
+            uniform_scale = params.uniform_scale,
+            modes = param_modes,
+            updates = params.updates[:, :, slc],
+            offsets = params.offsets),
+        hyperparams = AffineModeMorphHyperparams(
             N = hyperparams.N,
             M = hyperparams.M,
-            L = params.p_modes[:, slc].shape[-1],
+            L = L,
             update_scale = hyperparams.update_scale,
-            modes = hyperparams.modes))
+            modes = hyper_modes))
 
-
+def with_locked_modes(
+    params: AffineModeMorphAllParameters,
+    ) -> AffineModeMorphAllParameters:
+    params, hyperparams = params.params, params.hyperparams
+    return AffineModeMorphAllParameters(
+        params = AffineModeMorphParameters(
+            uniform_scale = params.uniform_scale,
+            modes = None,
+            updates = params.updates,
+            offsets = params.offsets),
+        hyperparams = AffineModeMorphHyperparams(
+            N = hyperparams.N,
+            M = hyperparams.M,
+            L = hyperparams.L,
+            update_scale = hyperparams.update_scale,
+            modes = params.modes))
 

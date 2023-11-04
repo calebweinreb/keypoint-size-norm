@@ -12,13 +12,14 @@ def plot_subjectwise_scalar_comparison(
     pal: Tuple = ('.5', '.3'),
     subject_whitelist = None
     ):
+   
     if subject_whitelist is None:
         subject_whitelist = np.arange(len(scalars[0]))
     n_subject = len(subject_whitelist)
     n_scalars = len(scalars)
     bar_width = 0.1
     bar_ofs = 0.1
-    first_bar_ofs = n_scalars - 1
+    first_bar_ofs = (n_scalars - 1) * bar_width
     for i_bar in range(n_scalars):
         curr_scalars = np.array(scalars[i_bar])[subject_whitelist]
         ax.bar(
