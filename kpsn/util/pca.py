@@ -108,6 +108,7 @@ class PCAData(NamedTuple):
         return (arr * (self.s[..., None, :] / norm)) @ vt
     
     
+
 class CenteredPCA():
     def __init__(self, center, pcadata):
         self._pcadata = pcadata
@@ -115,11 +116,17 @@ class CenteredPCA():
     
     def from_coords(self, arr: Float[Array, "*#K n_pts n_feats"]):
         return self._pcadata.from_coords(arr) + self._center[..., None, :]
+    
+    def whitened_coords(self, arr: Float[Array, "*#K n_pts n_feats"]):
+        return self._pcadata.whitened_coords(arr - self._center[..., None, :])
+    
+    def coords(self, arr: Float[Array, "*#K n_pts n_feats"]):
+        return self._pcadata.coords(arr - self._center[..., None, :])
 
 
 def fit(
     data: Float[Array, "*#K n_samples n_feats"],
-    centered: bool = False,
+    sign_correction: str = None,
     ) -> PCAData:
     """
     Parameters:
@@ -128,22 +135,41 @@ def fit(
             If it is not, then components will be given a canonical
             orientation (+/-) such that the mean of the data has positive
             coordinates."""
+    
     cov = data.T @ data
     _, s2, vt = np.linalg.svd(cov)
 
-    if not centered:
-        # coords for mean of data
-        # (..., n_components)
+    if sign_correction is not None:
+        if sign_correction == 'mean':
+            # coords for mean of data
+            standard_vec = data.mean(axis = -2)
+        if sign_correction == 'ones':
+            standard_vec = jnp.ones(data.shape[:-2] + (data.shape[-1],))
+        # standard_vec: (..., n_components)
+        # coord_directions: (..., n_components)
         coord_directions = jnp.sign(
-            data.mean(axis = -2)[..., None, :] @ jnp.swapaxes(vt, -2, -1)
+            standard_vec[..., None, :] @ jnp.swapaxes(vt, -2, -1)
         )[..., 0, :]
+        # coords for vector of ones
         # flip PCs acoording to sign of mean coords
         # (..., n_components, n_feats)
         vt = coord_directions[..., :, None] * vt
+    
     return PCAData(
         data.shape[-2],
         np.sqrt(s2),
         jnp.array(jnp.swapaxes(vt, -2, -1)))
+
+
+def fit_with_center(
+    data: Float[Array, "*#K n_samples n_feats"],
+    sign_correction: str = None,
+    ) -> CenteredPCA:
+    center = data.mean(axis = -2)
+    pcs = fit(
+        data - center[..., None, :],
+        sign_correction = sign_correction)
+    return CenteredPCA(center, pcs)
 
 
 def second_moment(arr: Float[Array, "*#K n_samples n_feats"]):

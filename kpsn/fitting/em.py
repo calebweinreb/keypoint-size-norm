@@ -66,19 +66,20 @@ def _estep(
     model: joint_model.JointModel,
     observations: pose.Observations,
     estimated_params: joint_model.JointParameters,
-    hyperparams: joint_model.JointHyperparams
+    hyperparams: joint_model.JointHyperparams,
     ) -> pose.PoseSpaceParameters:
 
+    estimated_params = estimated_params.with_hyperparams(hyperparams)
+
     est_morph_matrix, est_morph_ofs = model.morph.get_transform(
-        estimated_params.morph,
-        hyperparams.morph)
+        estimated_params.morph)
     aux_pdf = model.posespace.aux_distribution(
         observations, est_morph_matrix, est_morph_ofs,
-        estimated_params.posespace, hyperparams.posespace
+        estimated_params.posespace
     )
     
     est_discrete_logits = model.posespace.discrete_logits(
-        estimated_params.posespace, hyperparams.posespace)
+        estimated_params.posespace)
     term_weights: Float[Array, "Nt L"] = _point_weights(
         aux_pdf.consts,
         est_discrete_logits,
@@ -99,17 +100,15 @@ def _mstep_objective(
     Calculate objective for M-step to maximize.
     """
 
+    params = query_params.with_hyperparams(hyperparams)
+
     morph_matrix, morph_ofs = model.morph.get_transform(
-        query_params.morph,
-        hyperparams.morph)
+        params.morph)
     
     morph_prior = _pytree_sum(model.morph.log_prior(
-        query_params.morph,
-        hyperparams.morph
-    ))
+        params.morph))
     posespace_prior = _pytree_sum(model.posespace.log_prior(
-        query_params.posespace,
-        hyperparams.posespace))
+        params.posespace))
     
     # return morph_prior
     return pose.objective(
@@ -117,8 +116,7 @@ def _mstep_objective(
         observations,
         morph_matrix,
         morph_ofs,
-        query_params.posespace,
-        hyperparams.posespace,
+        params.posespace,
         aux_pdf,
         term_weights
     ) + morph_prior + posespace_prior
@@ -147,7 +145,11 @@ def construct_jitted_mstep(
     loss_func = _mstep_loss(model)
 
     @partial(jax.jit, static_argnums = (3,))
-    def step(opt_state, params, emissions, hyperparams, aux_pdf, term_weights):
+    def step(opt_state, params, emissions,
+             hyperparams_static, hyperparams_dynamic,
+             aux_pdf, term_weights):
+        hyperparams = joint_model.JointHyperparams.from_static_dynamic_parts(
+            model, hyperparams_static, hyperparams_dynamic)
         loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
             params, emissions, hyperparams, aux_pdf, term_weights)
         updates, opt_state = optimizer.update(grads, opt_state, params)
@@ -161,7 +163,10 @@ def construct_jitted_estep(
     model: joint_model.JointModel
     ):
     @partial(jax.jit, static_argnums = (2,))
-    def step(observations, estimated_params, hyperparams):
+    def step(observations, estimated_params,
+             hyperparams_static, hyperparams_dynamic):
+        hyperparams = joint_model.JointHyperparams.from_static_dynamic_parts(
+            model, hyperparams_static, hyperparams_dynamic)
         return _estep(model, observations, estimated_params, hyperparams)
     return step
     
@@ -203,6 +208,7 @@ def _mstep(
     opt_state = optimizer.init(init_params)
     loss_hist = np.empty([n_steps])
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
+    hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
     
     # ---- Run M-step iterations
 
@@ -210,7 +216,8 @@ def _mstep(
 
         curr_params, opt_state, loss_value = step(
             opt_state, curr_params,
-            emissions, hyperparams, aux_pdf, term_weights)
+            emissions, hyper_stat, hyper_dyna,
+            aux_pdf, term_weights)
         loss_hist[step_i] = loss_value
         
         if (log_every > 0) and (not step_i % log_every):
@@ -263,11 +270,12 @@ def iterate_em(
     if return_mstep_losses:
         mstep_losses = np.full([n_steps, mstep_n_steps], np.nan)
     if return_param_hist:
-        param_hist = [curr_params]
+        param_hist = [curr_params.with_hyperparams(hyperparams)]
 
     optimizer = optax.adam(learning_rate = mstep_learning_rate)
     jitted_mstep = construct_jitted_mstep(model, optimizer)
     jitted_estep = construct_jitted_estep(model)
+    hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
 
     if batch_size is not None:
         batch_rkey_seed = jr.PRNGKey(batch_seed)
@@ -290,7 +298,8 @@ def iterate_em(
         aux_pdf, term_weights = jitted_estep(
             observations = step_obs,
             estimated_params = curr_params,
-            hyperparams = hyperparams)
+            hyperparams_static = hyper_stat,
+            hyperparams_dynamic = hyper_dyna)
         loss_hist_mstep, fit_params_mstep = _mstep(
             model = model,
             init_params = curr_params,
@@ -311,15 +320,17 @@ def iterate_em(
         if return_mstep_losses:
             mstep_losses[step_i, :len(loss_hist_mstep)] = loss_hist_mstep
         if return_param_hist:
-            param_hist.append(curr_params)
+            param_hist.append(curr_params.with_hyperparams(hyperparams))
 
         if return_reports:
             report_trace.record(dict(
                 morph = model.morph.reports(
-                    hyperparams.morph, curr_params.morph),
+                    curr_params.morph.with_hyperparams(
+                        hyperparams.morph)),
                 posespace = model.posespace.reports(
-                    hyperparams.posespace, curr_params.posespace),
-                latent_logprob = _mstep_objective(
+                    curr_params.posespace.with_hyperparams(
+                        hyperparams.posespace)),
+                total_logprob = _mstep_objective(
                     model, step_obs, curr_params,
                     hyperparams, aux_pdf, term_weights)),
                 step_i)
@@ -338,7 +349,7 @@ def iterate_em(
             break
 
         
-    ret = loss_hist, curr_params
+    ret = loss_hist, curr_params.with_hyperparams(hyperparams)
     if return_mstep_losses: ret = ret + (mstep_losses,)
     if return_param_hist: ret = ret + (param_hist,)
     if return_reports: ret = ret + (report_trace,)

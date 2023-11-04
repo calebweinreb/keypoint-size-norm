@@ -38,37 +38,9 @@ class GMMParameters(NamedTuple):
 
     LOGIT_MAX = 5
 
-    def covariances(self) -> Float32[Array, "L M M"]:
-        return expand_tril_cholesky(self.cholesky, n = self.means.shape[1])
+    def with_hyperparams(self, hyperparams):
+        return GMMAllParameters(self, hyperparams)
 
-    @classmethod
-    def cholesky_from_covariances(self, covariances: Float32[Array, "L M M"]):
-        return extract_tril_cholesky(covariances) 
-
-    def weights(self) -> Float[Array, "N L"]:
-        return jnn.softmax(self.logits(), axis = 1)
-    
-    def pop_weights(self) -> Float[Array, "L"]:
-        return jnn.softmax(self.pop_logits())
-    
-    def logits(self) -> Float[Array, "N L"]:
-        return GMMParameters.normalize_logits(self.subj_weight_logits)
-    def pop_logits(self) -> Float[Array, "N L"]:
-        return GMMParameters.normalize_pop_logits(self.pop_weight_logits)
-    
-    @staticmethod
-    def normalize_logits(logits):
-        centered = logits - logits.mean(axis = 1)[:, None]
-        saturated = GMMParameters.LOGIT_MAX * jnp.tanh(
-            centered / GMMParameters.LOGIT_MAX)
-        return saturated
-    
-    @staticmethod
-    def normalize_pop_logits(pop_logits):
-        centered = pop_logits - pop_logits.mean()
-        saturated = GMMParameters.LOGIT_MAX * jnp.tanh(
-            centered / GMMParameters.LOGIT_MAX)
-        return saturated
 
 
 class GMMHyperparams(NamedTuple):
@@ -93,6 +65,66 @@ class GMMHyperparams(NamedTuple):
     eps: int
     pop_weight_uniformity: float
     subj_weight_uniformity: float
+
+    def as_static_dynamic_parts(self):
+        return (self, None)
+    
+    @staticmethod
+    def from_static_dynamic_parts(static, dynamic):
+        return static
+
+
+class GMMAllParameters(NamedTuple):
+    params: GMMParameters
+    hyperparams: GMMHyperparams
+    
+    # hyperparameter passthrough
+    N = property(lambda self: self.hyperparams.N)
+    M = property(lambda self: self.hyperparams.M)
+    L = property(lambda self: self.hyperparams.L)
+    eps = property(lambda self: self.hyperparams.eps)
+    pop_weight_uniformity = property(lambda self:
+        self.hyperparams.pop_weight_uniformity)
+    subj_weight_uniformity = property(lambda self:
+        self.hyperparams.subj_weight_uniformity)
+    # passthrough of some parameters
+    means = property(lambda self: self.params.means)
+    cholesky = property(lambda self: self.params.cholesky)
+    
+    def covariances(self) -> Float32[Array, "L M M"]:
+        return expand_tril_cholesky(self.cholesky, n = self.means.shape[1])
+
+    @classmethod
+    def cholesky_from_covariances(self, covariances: Float32[Array, "L M M"]):
+        return extract_tril_cholesky(covariances) 
+
+    def weights(self) -> Float[Array, "N L"]:
+        return jnn.softmax(self.logits(), axis = 1)
+    
+    def pop_weights(self) -> Float[Array, "L"]:
+        return jnn.softmax(self.pop_logits())
+    
+    def logits(self) -> Float[Array, "N L"]:
+        return GMMAllParameters.normalize_logits(self.params.subj_weight_logits)
+    def pop_logits(self) -> Float[Array, "N L"]:
+        return GMMAllParameters.normalize_pop_logits(self.params.pop_weight_logits)
+    
+    @staticmethod
+    def normalize_logits(logits):
+        centered = logits - logits.mean(axis = 1)[:, None]
+        saturated = GMMParameters.LOGIT_MAX * jnp.tanh(
+            centered / GMMParameters.LOGIT_MAX)
+        return saturated
+    
+    @staticmethod
+    def normalize_pop_logits(pop_logits):
+        centered = pop_logits - pop_logits.mean()
+        saturated = GMMParameters.LOGIT_MAX * jnp.tanh(
+            centered / GMMParameters.LOGIT_MAX)
+        return saturated
+    
+    HyperparamClass = GMMHyperparams
+    ParamClass = GMMParameters
 
 
 class GMMPoseStates(NamedTuple):
@@ -131,8 +163,7 @@ def aux_distribution(
     observations: Observations,
     morph_matrix: Float[Array, "N KD M"],
     morph_ofs: Float[Array, "N M"],
-    params: GMMParameters,
-    hyperparams: GMMHyperparams,
+    params: GMMAllParameters,
     morph_inv: Float[Array, "N M KD"] = None,
     ) -> Tuple[Float[Array, "Nt L"], GMMAuxPDF]:
     """
@@ -169,8 +200,8 @@ def aux_distribution(
     KD: int = morph_matrix.shape[1]
     ps_mean, ps_cov, ps_cov_inv, ps_normalizer_log = linear_transform_gaussian(
         query_point = observations.keypts, # (Nt, KD)
-        cov = hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
-        cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
+        cov = params.eps * jnp.eye(KD)[None], # (1, KD, KD)
+        cov_inv = jnp.eye(KD)[None] / params.eps, # (1, KD, KD)
         A = morph_matrix[observations.subject_ids], # (Nt, KD, M)
         Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
         d = morph_ofs[observations.subject_ids], # (Nt, M) 
@@ -202,8 +233,7 @@ def aux_distribution(
 
 
 def discrete_logits(
-    params: GMMParameters,
-    hyperparams: GMMHyperparams
+    params: GMMAllParameters,
     ) -> Float[Array, "N L"]:
     """
     Probabilities across discrete pose space for each subject.
@@ -218,8 +248,7 @@ def discrete_logits(
 
 
 def discrete_probs(
-    params: GMMParameters,
-    hyperparams: GMMHyperparams
+    params: GMMAllParameters,
     ) -> Float[Array, "N L"]:
     """
     Probabilities across discrete pose space for each subject.
@@ -237,8 +266,7 @@ def logprob_expectations(
     observations: Observations,
     morph_matrix: Float[Array, "N KD M"],
     morph_ofs: Float[Array, "N M"],
-    query_params: GMMParameters,
-    hyperparams: GMMHyperparams,
+    params: GMMAllParameters,
     aux_pdf: GMMAuxPDF,
     morph_inv: Float[Array, "N M KD"] = None,
     ) -> Float[Array, "Nt L"]:
@@ -272,8 +300,8 @@ def logprob_expectations(
     KD: int = morph_matrix.shape[1]
     ps_mean, ps_cov, ps_cov_inv = linear_transform_gaussian(
         query_point = observations.keypts, # (Nt, KD)
-        cov = hyperparams.eps * jnp.eye(KD)[None], # (1, KD, KD)
-        cov_inv = jnp.eye(KD)[None] / hyperparams.eps, # (1, KD, KD)
+        cov = params.eps * jnp.eye(KD)[None], # (1, KD, KD)
+        cov_inv = jnp.eye(KD)[None] / params.eps, # (1, KD, KD)
         A = morph_matrix[observations.subject_ids], # (Nt, KD, M)
         Ainv = morph_inv[observations.subject_ids], # (Nt, KD, M)
         d = morph_ofs[observations.subject_ids], # (Nt, M)
@@ -288,10 +316,10 @@ def logprob_expectations(
         ps_cov_inv[:, None]
     )
 
-    query_Q = query_params.covariances()
+    query_Q = params.covariances()
     posespace_term = normal_quadform_expectation(
         aux_pdf.mean, aux_pdf.cov,
-        query_params.means,
+        params.means,
         jnp.linalg.inv(query_Q),
     )
     posespace_norm = jnp.linalg.slogdet(query_Q)[1]
@@ -415,8 +443,7 @@ def sample_parameters(
 
 def sample(
     rkey: PRNGKey,
-    params: GMMParameters,
-    hyperparams: GMMHyperparams,
+    params: GMMAllParameters,
     T: int
     ) -> GMMPoseStates:
 
@@ -424,8 +451,8 @@ def sample(
 
     comp_weights = params.weights()
     z: Integer[Array, "N*T"] = jnp.stack([
-        jr.choice(k, hyperparams.L, shape = (T,), replace = True, p = w)
-        for k, w, in zip(jr.split(rkey[0], hyperparams.N), comp_weights)
+        jr.choice(k, params.L, shape = (T,), replace = True, p = w)
+        for k, w, in zip(jr.split(rkey[0], params.N), comp_weights)
         ]).flatten()
 
     x: Integer[Array, "N*T M"] = jr.multivariate_normal(
@@ -434,8 +461,8 @@ def sample(
     )
 
     subject_ids = jnp.broadcast_to(
-        jnp.arange(hyperparams.N)[:, None],
-        (hyperparams.N, T)).flatten()
+        jnp.arange(params.N)[:, None],
+        (params.N, T)).flatten()
 
     return GMMPoseStates(components = z, poses = x), subject_ids
 
@@ -529,8 +556,7 @@ def init_parameters_and_latents(
 
 def discrete_mle(
     poses: Float[Array, "Nt M"],
-    hyperparams: GMMHyperparams,
-    estimated_params: GMMParameters
+    estimated_params: GMMAllParameters
     ) -> GMMPoseStates:
     """
     Estimate pose model discrete latents given poses.
@@ -546,18 +572,17 @@ def discrete_mle(
 
 
 def log_prior(
-    params: GMMParameters,
-    hyperparams: GMMHyperparams,
+    params: GMMAllParameters,
     ):
     # Heirarchical dirichlet prior on component weights
     pop_weights = params.pop_weights()
     pop_logpdf = tfp.distributions.Dirichlet(
-        jnp.ones([hyperparams.L]) *
-            hyperparams.pop_weight_uniformity /
-            hyperparams.L,
+        jnp.ones([params.L]) *
+            params.pop_weight_uniformity /
+            params.L,
     ).log_prob(pop_weights)
     subj_logpdf = tfp.distributions.Dirichlet( 
-        hyperparams.subj_weight_uniformity *
+        params.subj_weight_uniformity *
         pop_weights
     ).log_prob(params.weights())
 
@@ -568,16 +593,16 @@ def log_prior(
     
 
 def reports(
-    hyperparams: GMMHyperparams,
-    params: GMMParameters,
+    params: GMMAllParameters,
     ):
     return dict(
-        priors = log_prior(params, hyperparams)
+        priors = log_prior(params)
     )
     
 
 
 GMMPoseSpaceModel = PoseSpaceModel(
+    ParameterClass = GMMAllParameters,
     discrete_mle = discrete_mle,
     sample = sample,
     sample_parameters = sample_parameters,

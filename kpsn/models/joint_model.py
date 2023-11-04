@@ -9,13 +9,57 @@ class JointModel(NamedTuple):
     posespace: pose.PoseSpaceModel
     morph: morph.MorphModel
 
+class JointHyperparams(NamedTuple):
+    posespace: pose.PoseSpaceHyperparams
+    morph: morph.MorphHyperparams
+
+    def as_static_dynamic_parts(self):
+        ps_static, ps_dynamic = self.posespace.as_static_dynamic_parts()
+        m_static, m_dynamic = self.morph.as_static_dynamic_parts()
+        return ((ps_static, m_static), (ps_dynamic, m_dynamic))
+    
+    @staticmethod
+    def from_static_dynamic_parts(model: JointModel, static, dynamic):
+        ps_hyper_class = model.posespace.ParameterClass.HyperparamClass
+        m_hyper_class = model.morph.ParameterClass.HyperparamClass
+        return JointHyperparams(
+            posespace = ps_hyper_class.from_static_dynamic_parts(
+                static[0], dynamic[0]),
+            morph = m_hyper_class.from_static_dynamic_parts(
+                static[1], dynamic[1])
+        )
+
 class JointParameters(NamedTuple):
     posespace: pose.PoseSpaceParameters
     morph: morph.MorphParameters
 
-class JointHyperparams(NamedTuple):
-    posespace: pose.PoseSpaceHyperparams
-    morph: morph.MorphHyperparams
+    def with_hyperparams(self, hyperparams: JointHyperparams):
+        return JointAllParameters(
+            posespace = self.posespace.with_hyperparams(
+                hyperparams.posespace),
+            morph = self.morph.with_hyperparams(
+                hyperparams.morph))
+
+class JointAllParameters(NamedTuple):
+    posespace: pose.PoseSpaceAllParameters
+    morph: morph.MorphAllParameters
+
+    @property
+    def params(self):
+        return JointParameters(
+            self.posespace.params, self.morph.params)
+
+    @property
+    def hyperparams(self):
+        return JointHyperparams(
+            self.posespace.hyperparams, self.morph.hyperparams)
+    
+    def with_morph(self, morph: morph.MorphAllParameters):
+        return JointAllParameters(self.posespace, morph)
+
+    def with_posespace(self, posespace: pose.PoseSpaceAllParameters):
+        return JointAllParameters(posespace, self.morph)
+
 
 def sample(
     rkey: PRNGKey,
@@ -57,16 +101,16 @@ def sample(
 
     return morph_params, pose_params, pose_latents, obs
     
+
 def latent_mle(
     model: JointModel,
     observations: pose.Observations,
-    params: JointParameters,
-    hyperparams: JointHyperparams,
+    params: JointAllParameters,
     ) -> pose.PoseStates:
     poses = model.morph.pose_mle(
-        observations, params.morph, hyperparams.morph)
+        observations, params.morph)
     return model.posespace.discrete_mle(
-        poses, hyperparams.posespace, params.posespace)
+        poses, params.posespace)
 
 
 def init(
@@ -83,7 +127,8 @@ def init(
         reference_subject, seed,
         **morph_kws)
     poses = model.morph.pose_mle(
-        observations, morph_params, hyperparams.morph)
+        observations,
+        morph_params.with_hyperparams(hyperparams.morph))
     posespace_params = model.posespace.init(
         hyperparams.posespace,
         observations,
