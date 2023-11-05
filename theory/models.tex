@@ -124,7 +124,40 @@ Initialization of the morph parameters $\phi$ is described in section XXX. Given
 
 \section{Morph models}
 
-XXX
+\subsection{Low-rank affine morph}
+
+One way to enforce simplicity $f(x, \phi)$ is to make it an affine map in $x$. However, because $x\in\RR^{KD}$ is rather high dimensional, this still leaves a huge number of degrees of freedom. We therefore also enforce in this morph model that the linear component of $f$ be low-rank.
+
+The main adjustment of posture will be performed by the affine offset. For example, this might set certain bone lengths to be longer for a particular session. It is unlikely that these updates will be sufficient across all poses however - e.g. when limbs are extended in 2D keypoints the bone lengths adjustments need to be greater, or in 3D keypoints the updated needed to extend bone lengths during a rear are different from those needed during running. We therefore also add an update to the first $L$ PCs (``modes''), inferred from a reference session and fixed during training.
+
+The morph function described above may be formulated in terms of the following hyperparameters:
+\begin{align*}
+    m&\in \RR^{KD} &&
+        && \text{Centroid of population pose space} \\
+    U&\in \RR^{L\times KD} &&
+        && \text{Orthonormal matrix of posture modes} \\
+    \nu_m, \nu_U &\in \RR &&
+        && \text{Prior standard deviation for centroid and} \\
+    &&& && \quad\text{mode adjustments, respectively}
+\end{align*}
+and a tuple $\phi_n = (\hat{m}_n, \hat{U}_n)$ of trainable parameters, for which we now also specify priors:
+\begin{align*}
+    \hat{m}_n &\in \RR^{KD} && \sim \NN(\mathbf{0}_{KD}, \nu_{m} I_{KD})  
+        && \text{Session-wise adjustments to centroid pose} \\
+    \hat{U}_n&\in \RR^{L\times KD} &&\sim \NN(\mathbf{0}_{LKD}, \nu_{U} I_{LKD})
+        && \text{Session-wise adjustments to posture modes}
+\end{align*}
+We may now write down a mapping of poses for low rank affine morph. We use the projection onto orthogonal complement of $U$'s columns as a pass-through on the dimensions of pose space beyond the first $L$ PCs. Since $U$ is a tall matrix with orthogonal columns, this projection takes the particularly simple form $U^\perp = I - UU^T$. Using this, we may write
+\begin{align}
+    f(x, \phi_n) &= \pn{U + \hat{U}_n} U^T (x - m) + U^\perp (x - m) + (m + \hat{m}_n) \\
+    &= \bc{I + \hat{U}_n U^T} (x - m) + (m + \hat{m}_n) 
+\end{align}
+The inverse of this map in its first argument is simply
+\begin{align}
+    f\inv(x, \phi_n) = \bc{ I + \hat{U}_n U^T }\inv (x - (m + \hat{m}_n)) + m
+\end{align}
+
+
 
 
 \section{E-step}

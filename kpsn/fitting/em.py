@@ -24,7 +24,7 @@ def _pytree_sum(tree):
 
 def _check_should_stop_early(loss_hist, tol):
     """
-    Check for average decrease in loss that is worse than `tol`.
+    Check for median decrease in loss that is worse than `tol`.
 
     Args:
         loss_hist: np.ndarray, shape: (N,)
@@ -32,7 +32,7 @@ def _check_should_stop_early(loss_hist, tol):
         tol: Scalar
             Required average improvement to continue.
     """
-    return np.diff(loss_hist).mean() > -tol
+    return np.median(np.diff(loss_hist)) > -tol
 
 
 def _point_weights(
@@ -71,21 +71,16 @@ def _estep(
 
     estimated_params = estimated_params.with_hyperparams(hyperparams)
 
-    est_morph_matrix, est_morph_ofs = model.morph.get_transform(
-        estimated_params.morph)
+    est_poses = model.morph.inverse_transform(
+        estimated_params.morph,
+        observations.keypts,
+        observations.subject_ids)
     aux_pdf = model.posespace.aux_distribution(
-        observations, est_morph_matrix, est_morph_ofs,
-        estimated_params.posespace
-    )
-    
-    est_discrete_logits = model.posespace.discrete_logits(
-        estimated_params.posespace)
-    term_weights: Float[Array, "Nt L"] = _point_weights(
-        aux_pdf.consts,
-        est_discrete_logits,
+        estimated_params.posespace,
+        est_poses,
         observations.subject_ids)
     
-    return aux_pdf, term_weights
+    return aux_pdf
 
 
 def _mstep_objective(
@@ -93,8 +88,7 @@ def _mstep_objective(
     observations: pose.Observations,    
     query_params: joint_model.JointParameters,
     hyperparams: joint_model.JointHyperparams,    
-    aux_pdf: pose.EMAuxPDF,
-    term_weights: Float[Array, "Nt L"],
+    aux_pdf: Float[Array, "Nt L"],
     ) -> Scalar:
     """
     Calculate objective for M-step to maximize.
@@ -102,8 +96,11 @@ def _mstep_objective(
 
     params = query_params.with_hyperparams(hyperparams)
 
-    morph_matrix, morph_ofs = model.morph.get_transform(
-        params.morph)
+    poses = model.morph.inverse_transform(
+        params.morph, observations.keypts, observations.subject_ids)
+    pose_probs = model.posespace.pose_logprob(
+        params.posespace, poses, observations.subject_ids)
+    dataset_prob = (pose_probs * aux_pdf).sum()
     
     morph_prior = _pytree_sum(model.morph.log_prior(
         params.morph))
@@ -111,15 +108,7 @@ def _mstep_objective(
         params.posespace))
     
     # return morph_prior
-    return pose.objective(
-        model.posespace,
-        observations,
-        morph_matrix,
-        morph_ofs,
-        params.posespace,
-        aux_pdf,
-        term_weights
-    ) + morph_prior + posespace_prior
+    return dataset_prob + morph_prior + posespace_prior
 
 
 def _mstep_loss(
@@ -129,29 +118,33 @@ def _mstep_loss(
         params: optax.Params, 
         emissions: pose.Observations,
         hyperparams: joint_model.JointParameters,
-        aux_pdf: pose.EMAuxPDF,
-        term_weights: Float[Array, "Nt L"], 
+        aux_pdf: Float[Array, "Nt L"], 
         ):
 
         return -_mstep_objective(
-            model, emissions, params, hyperparams, aux_pdf, term_weights)
+            model, emissions, params, hyperparams, aux_pdf)
     return step_loss_
 
 
 def construct_jitted_mstep(
     model: joint_model.JointModel,
-    optimizer: optax.GradientTransformation):
+    optimizer: optax.GradientTransformation,
+    update_max: float):
 
     loss_func = _mstep_loss(model)
 
     @partial(jax.jit, static_argnums = (3,))
     def step(opt_state, params, emissions,
              hyperparams_static, hyperparams_dynamic,
-             aux_pdf, term_weights):
+             aux_pdf):
         hyperparams = joint_model.JointHyperparams.from_static_dynamic_parts(
             model, hyperparams_static, hyperparams_dynamic)
         loss_value, grads = jax.value_and_grad(loss_func, argnums = 0)(
-            params, emissions, hyperparams, aux_pdf, term_weights)
+            params, emissions, hyperparams, aux_pdf)
+        if update_max is not None:
+            grads = pt.tree_map(
+                (lambda a: a.clip(-update_max, update_max)),
+                grads)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss_value
@@ -175,17 +168,17 @@ def construct_jitted_estep(
 def _mstep(
     model: joint_model.JointModel,
     init_params: optax.Params,
-    aux_pdf: pose.EMAuxPDF,
-    term_weights: Float[Array, "Nt L"], 
+    aux_pdf: Float[Array, "Nt L"], 
     emissions: pose.Observations,
-    hyperparams: joint_model.JointParameters,
+    hyperparams: joint_model.JointHyperparams,
     optimizer: optax.GradientTransformation,
     n_steps: int,
     log_every: int,
     progress = False,
     tol: float = None,
     stop_window: int = 10,
-    jitted_step  = None,
+    update_max = None,
+    jitted_step  = None
     ) -> Tuple[Float[Array, "n_steps"], joint_model.JointParameters]:
     """
     Args:
@@ -200,13 +193,13 @@ def _mstep(
 
     step = jitted_step
     if step is None:
-        step = construct_jitted_mstep(model, optimizer)
+        step = construct_jitted_mstep(model, optimizer, update_max)
 
     # ----- Set up variables for iteration
 
     curr_params = init_params
     opt_state = optimizer.init(init_params)
-    loss_hist = np.empty([n_steps])
+    loss_hist = np.full([n_steps], np.nan)
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
     hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
     
@@ -217,7 +210,7 @@ def _mstep(
         curr_params, opt_state, loss_value = step(
             opt_state, curr_params,
             emissions, hyper_stat, hyper_dyna,
-            aux_pdf, term_weights)
+            aux_pdf)
         loss_hist[step_i] = loss_value
         
         if (log_every > 0) and (not step_i % log_every):
@@ -238,7 +231,6 @@ def iterate_em(
     model: joint_model.JointModel,
     init_params: joint_model.JointParameters,
     emissions: pose.Observations,
-    hyperparams: joint_model.JointHyperparams,
     n_steps: int,
     log_every: int,
     progress = False,
@@ -252,6 +244,7 @@ def iterate_em(
     mstep_progress = False,
     mstep_tol: float = None,
     mstep_stop_window: int = 10,
+    mstep_update_max = None,
     return_mstep_losses = False,
     return_param_hist = False,
     return_reports = False,
@@ -263,17 +256,19 @@ def iterate_em(
     Perform EM on a JointModel. 
     """
 
-    curr_params = init_params
+    hyperparams = init_params.hyperparams
+    curr_params = init_params.trained_params
     loss_hist = np.empty([n_steps])
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
     report_trace = logging.ReportTrace(n_steps)
     if return_mstep_losses:
         mstep_losses = np.full([n_steps, mstep_n_steps], np.nan)
     if return_param_hist:
-        param_hist = [curr_params.with_hyperparams(hyperparams)]
+        param_hist = [curr_params]
 
     optimizer = optax.adam(learning_rate = mstep_learning_rate)
-    jitted_mstep = construct_jitted_mstep(model, optimizer)
+    jitted_mstep = construct_jitted_mstep(model, optimizer,
+        mstep_update_max)
     jitted_estep = construct_jitted_estep(model)
     hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
 
@@ -295,7 +290,7 @@ def iterate_em(
         else:
             step_obs = emissions
 
-        aux_pdf, term_weights = jitted_estep(
+        aux_pdf = jitted_estep(
             observations = step_obs,
             estimated_params = curr_params,
             hyperparams_static = hyper_stat,
@@ -304,7 +299,6 @@ def iterate_em(
             model = model,
             init_params = curr_params,
             aux_pdf = aux_pdf,
-            term_weights = term_weights,
             emissions = step_obs,
             hyperparams = hyperparams,
             optimizer = optimizer,
@@ -313,6 +307,7 @@ def iterate_em(
             progress = mstep_progress,
             tol = mstep_tol,
             stop_window = mstep_stop_window,
+            update_max = mstep_update_max,
             jitted_step = jitted_mstep
         )
         loss_hist[step_i] = loss_hist_mstep[-1]
@@ -320,7 +315,7 @@ def iterate_em(
         if return_mstep_losses:
             mstep_losses[step_i, :len(loss_hist_mstep)] = loss_hist_mstep
         if return_param_hist:
-            param_hist.append(curr_params.with_hyperparams(hyperparams))
+            param_hist.append(curr_params)
 
         if return_reports:
             report_trace.record(dict(
@@ -332,7 +327,7 @@ def iterate_em(
                         hyperparams.posespace)),
                 total_logprob = _mstep_objective(
                     model, step_obs, curr_params,
-                    hyperparams, aux_pdf, term_weights)),
+                    hyperparams, aux_pdf)),
                 step_i)
 
         

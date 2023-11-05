@@ -2,6 +2,7 @@ from typing import Tuple, Optional
 from jaxtyping import Float, Array, Integer, PRNGKeyArray as PRNGKey
 import jax.numpy as jnp
 import numpy as np
+import jax.numpy.linalg as jla
 import jax.random as jr
 import jax
 
@@ -194,6 +195,16 @@ def unstack(
         jnp.take(arr, jnp.where(ixs == i)[0], axis = axis)
         for i in range(N))
 
+def stacked_take(
+    arr,
+    ixs,
+    take_ix: int,
+    axis = 0):
+    """
+    Index into stacked axis at location `ix`
+    """
+    return jnp.take(arr, jnp.where(ixs == take_ix)[0], axis = axis)
+
 
 def restack(
     arrs,
@@ -258,6 +269,34 @@ def stacked_batch(
     return restack([
         jr.choice(rkey, ixs, (batch_size,), replace = replace)
         for ixs in unstacked_ixs])
+
+
+
+def broadcast_batch(arr, batch_shape):
+    return arr[(None,) * len(batch_shape)]
+
+
+import platform
+__use_explicit_pseudoinverse = ( # avoid M1 chip crashes
+    platform.processor() == 'arm' and
+    (not jax.default_backend() == 'gpu')
+)
+
+def pinv(A: Float[Array, "*#K M N"]) -> Float[Array, "*#K N M"]:
+    if A.shape[-1] > A.shape[-2]:
+        raise ValueError("pinv called on wide matrix.")
+    if __use_explicit_pseudoinverse:
+        transposed = jnp.swapaxes(A, -2, -1)
+        return jla.inv(transposed @ A) @ transposed
+    else:
+        return jnp.linalg.pinv(A)
+    
+
+def colspace_passthrough(A: Float[Array, "*#K M N"]) -> Float[Array, "*#K M M"]:
+    """for M > N (tall matrix), l.i. cols"""
+    if A.shape[-1] > A.shape[-2]:
+        raise ValueError("colspace_passthrough called on wide matrix.")
+    return jnp.eye(A.shape[-2]) - A @ pinv(A)
 
 
 def linear_transform_gaussian(

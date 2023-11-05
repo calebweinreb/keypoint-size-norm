@@ -5,6 +5,8 @@ import numpy as np
 
 import seaborn as sns
 
+from kpsn.models.morph import affine_mode as afm
+
 def plot_subjectwise_scalar_comparison(
     ax,
     scalars: Tuple[Float[Array, "n_subject"]],
@@ -59,26 +61,23 @@ def plot_paired_vectors(
             length_includes_head = True,
             **artist_kws)
 
+
 def plot_morph_action(
     ax,
-    morph_model,
-    morph_hyperparams,
-    morph_params,
+    morph_params: afm.AFMParameters,
     vectors: Float[Array, "morph_in_dim n_vector"],
     display_scale = 1,
     subject_whitelist: Tuple[int] = None,
     ):
     """Display input-output mapping of a morph on given vectors."""
     if subject_whitelist is None:
-        subject_whitelist = np.arange(morph_hyperparams.N)
+        subject_whitelist = np.arange(morph_params.N)
     
-    morph_matrix, morph_ofs = morph_model.get_transform(
-        morph_params, morph_hyperparams)
-    morphed = ( # (n_subj, morph_out_dim, n_vector)
-        (morph_matrix @ # (n_subj, morph_out_dim, morph_in_dim)
-         vectors[None]) # (1, morph_in_dim, n_vector)
-       + morph_ofs[..., None] # (n_subj, morph_out_dim, 1)
-    )
+    _, pop_offset, sess_offsets = afm.get_transform(morph_params)
+    morphed = afm.transform(morph_params,
+        vectors.T[None], # [1, n_vector, morph_in_dim])
+        sess_ids = np.array(subject_whitelist)[:, None])
+    print("morphed:", morphed.shape)
     n_vector = vectors.shape[1]
     N = len(subject_whitelist)
     for i_subj, subj_id in enumerate(subject_whitelist):
@@ -90,12 +89,12 @@ def plot_morph_action(
             plot_paired_vectors(
                 ax[:, i_subj],
                 jnp.stack([
-                    morphed[subj_id, :, i_vector],
+                    morphed[subj_id, i_vector, :],
                     vectors[:, i_vector]
                 ], axis = 0),
                 origins = jnp.stack([
-                    morph_ofs[subj_id],
-                    jnp.zeros(2),
+                    sess_offsets[subj_id],
+                    pop_offset,
                 ]),
                 artist_kws = dict(
                     lw = 1,
@@ -105,9 +104,9 @@ def plot_morph_action(
                 display_scale = display_scale
             )
         ax[0, i_subj].plot(
-            [morph_ofs[subj_id, 0]], [morph_ofs[subj_id, 1]],
+            [sess_offsets[subj_id, 0]], [sess_offsets[subj_id, 1]],
             'ko', ms = 3)
-        ax[1, i_subj].plot([0], [0], 'ko', ms = 3)
+        ax[1, i_subj].plot([pop_offset[0]], [pop_offset[1]], 'ko', ms = 3)
 
 
 def plot_morph_action_standard_basis(
@@ -125,8 +124,6 @@ def plot_morph_action_standard_basis(
 
 def plot_morph_dimensions(
     ax,
-    morph_hyperparams,
-    morph_model,
     morph_params, 
     display_scale = 1,
     subject_whitelist = None,
@@ -140,9 +137,7 @@ def plot_morph_dimensions(
     """
     plot_morph_action(
         ax,
-        morph_model,
-        morph_hyperparams,
         morph_params,
-        morph_params.modes(),
+        morph_params.modes,
         display_scale,
         subject_whitelist)

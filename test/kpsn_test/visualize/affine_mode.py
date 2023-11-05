@@ -10,7 +10,7 @@ from kpsn.models.morph import affine_mode as afm
 from .diagram_plots import plot_mouse
 
 def mode_quantiles(
-    params: afm.AffineModeMorphAllParameters,
+    params: afm.AFMParameters,
     poses: Float[Array, "*#K n_samples M"],
     quantile: float
     ) -> Float[Array, "*#K L"]:
@@ -19,7 +19,7 @@ def mode_quantiles(
 
 
 def mode_body_diagrams(
-    params: afm.AffineModeMorphAllParameters,
+    params: afm.AFMParameters,
     mode_magnitudes: Float[Array, "L"],
     ages: list, # indexed by vid_id
     subj_ids: list, # indexed by vid_id,

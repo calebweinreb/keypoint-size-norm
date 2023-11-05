@@ -6,9 +6,9 @@ import jax
 from ...util.computations import unstack
 
 
-class PoseSpaceParameters(Protocol):
+class PoseSpaceTrainedParams(Protocol):
     def with_hyperparams(self, hyperparams):
-        return PoseSpaceAllParameters(self, hyperparams)
+        return PoseSpaceParameters(self, hyperparams)
 
 
 class PoseSpaceHyperparams(Protocol):
@@ -26,8 +26,8 @@ class PoseSpaceHyperparams(Protocol):
     eps: int
 
 
-class PoseSpaceAllParameters(Protocol):
-    params: PoseSpaceParameters
+class PoseSpaceParameters(Protocol):
+    params: PoseSpaceTrainedParams
     hyperparams: PoseSpaceHyperparams
 
 
@@ -90,62 +90,56 @@ class EMAuxPDF(NamedTuple):
 class PoseSpaceModel(NamedTuple):
     ParameterClass: type
     discrete_mle: Callable[..., PoseStates]
-    sample: Callable[..., Tuple[PoseStates, Integer[Array, "Nt"]]]
-    sample_parameters: Callable[..., PoseSpaceParameters]
-    logprob_expectations: Callable[..., Float[Array, "Nt L"]]
-    discrete_prob: Callable[..., Float[Array, "N L"]]
-    discrete_logits: Callable[..., Float[Array, "N L"]]
-    aux_distribution: Callable[..., EMAuxPDF]
+    sample_poses: Callable[..., Tuple[PoseStates, Integer[Array, "Nt"]]]
+    sample_hyperparams: Callable[..., PoseSpaceHyperparams]
+    sample_parameters: Callable[..., PoseSpaceTrainedParams]
+    pose_logprob: Callable[..., Float[Array, "Nt L"]]
+    aux_distribution: Callable[..., Float[Array, "Nt L"]]
     log_prior: Callable[
-        [PoseSpaceParameters, PoseSpaceHyperparams], 
+        [PoseSpaceParameters], 
         Scalar]
-    init: Callable[..., Tuple[PoseSpaceParameters]]
+    init_hyperparams: Callable[..., PoseSpaceHyperparams]
+    init: Callable[..., PoseSpaceTrainedParams]
     reports: Callable[..., dict]
 
 
 
 
 
-def common_logprob_expectations(
-    observations: Observations,
-    query_discrete_probs: Float[Array, "N L"],
-    ) -> Float[Array, "Nt L"]: 
-    """
-    Compute objective function terms shared across pose space models.
-    """
+# def common_logprob_expectations(
+#     observations: Observations,
+#     query_discrete_probs: Float[Array, "N L"],
+#     ) -> Float[Array, "Nt L"]: 
+#     """
+#     Compute objective function terms shared across pose space models.
+#     """
     
-    return jnp.log(query_discrete_probs)[observations.subject_ids]
+#     return jnp.log(query_discrete_probs)[observations.subject_ids]
 
 
 
-def objective(
-    posespace_model: PoseSpaceModel,
-    observations: Observations,
-    query_morph_matrix: Float[Array, "N KD M"],
-    query_morph_ofs: Float[Array, "N KD M"],
-    params: PoseSpaceAllParameters,
-    aux_pdf: EMAuxPDF,
-    term_weights: Float[Array, "Nt L"],
-    ) -> Scalar:
-    """
-    Objective function for M-step to maximize.
+# def objective(
+#     posespace_model: PoseSpaceModel,
+#     params: PoseSpaceParameters,
+#     poses: Float[Array, "Nt L"],
+#     aux_pdf: Float[Array, "Nt L"],
+#     ) -> Scalar:
+#     """
+#     Objective function for M-step to maximize.
 
-    NOTE: only invertable morphs are supported at the moment.
-    """
+#     NOTE: only invertable morphs are supported at the moment.
+#     """
     
-    # ----- Compute terms of the objective function
+#     # ----- Compute terms of the objective function
 
-    model_log_exp: Float[Array, "Nt L"] = posespace_model.logprob_expectations(
-        observations,
-        query_morph_matrix, query_morph_ofs,
-        params, aux_pdf
-    )
-    common_logprob_expect: Float[Array, "Nt L"] = common_logprob_expectations(
-        observations,
-        posespace_model.discrete_prob(params)
-    )
+#     : Float[Array, "Nt L"] = posespace_model.pose_logprob(
+#         params, poses)
+#     common_logprob_expect: Float[Array, "Nt L"] = common_logprob_expectations(
+#         observations,
+#         posespace_model.discrete_prob(params)
+#     )
 
-    # ----- Sum terms and return
-    return (
-        term_weights * (model_log_exp + common_logprob_expect)
-    ).sum() 
+#     # ----- Sum terms and return
+#     return (
+#         term_weights * (model_log_exp + common_logprob_expect)
+#     ).sum() 

@@ -29,36 +29,36 @@ class JointHyperparams(NamedTuple):
                 static[1], dynamic[1])
         )
 
-class JointParameters(NamedTuple):
-    posespace: pose.PoseSpaceParameters
-    morph: morph.MorphParameters
+class JointTrainedParams(NamedTuple):
+    posespace: pose.PoseSpaceTrainedParams
+    morph: morph.MorphTrainedParams
 
     def with_hyperparams(self, hyperparams: JointHyperparams):
-        return JointAllParameters(
+        return JointParameters(
             posespace = self.posespace.with_hyperparams(
                 hyperparams.posespace),
             morph = self.morph.with_hyperparams(
                 hyperparams.morph))
 
-class JointAllParameters(NamedTuple):
-    posespace: pose.PoseSpaceAllParameters
-    morph: morph.MorphAllParameters
+class JointParameters(NamedTuple):
+    posespace: pose.PoseSpaceParameters
+    morph: morph.MorphParameters
 
     @property
-    def params(self):
-        return JointParameters(
-            self.posespace.params, self.morph.params)
+    def trained_params(self):
+        return JointTrainedParams(
+            self.posespace.trained_params, self.morph.trained_params)
 
     @property
     def hyperparams(self):
         return JointHyperparams(
             self.posespace.hyperparams, self.morph.hyperparams)
     
-    def with_morph(self, morph: morph.MorphAllParameters):
-        return JointAllParameters(self.posespace, morph)
+    def with_morph(self, morph: morph.MorphParameters):
+        return JointParameters(self.posespace, morph)
 
-    def with_posespace(self, posespace: pose.PoseSpaceAllParameters):
-        return JointAllParameters(posespace, self.morph)
+    def with_posespace(self, posespace: pose.PoseSpaceParameters):
+        return JointParameters(posespace, self.morph)
 
 
 def sample(
@@ -68,8 +68,10 @@ def sample(
     hyperparams: JointHyperparams,
     morph_param_kwargs: Dict,
     posespace_param_kwargs: Dict
-    ) -> Tuple[morph.MorphParameters, pose.PoseSpaceParameters,
+    ) -> Tuple[morph.MorphTrainedParams, pose.PoseSpaceTrainedParams,
                pose.PoseStates, pose.Observations]:
+    
+    raise NotImplementedError
     
     rkey = jr.split(rkey, 3)
     
@@ -83,7 +85,7 @@ def sample(
         hyperparams.posespace,
         **posespace_param_kwargs
     )
-    pose_latents, subject_ids = model.posespace.sample(
+    pose_latents, subject_ids = model.posespace.sample_poses(
         rkey[2],
         pose_params,
         hyperparams.posespace,
@@ -105,12 +107,12 @@ def sample(
 def latent_mle(
     model: JointModel,
     observations: pose.Observations,
-    params: JointAllParameters,
+    params: JointParameters,
     ) -> pose.PoseStates:
-    poses = model.morph.pose_mle(
-        observations, params.morph)
+    poses = model.morph.inverse_transform(
+        params.morph, observations.keypts, observations.subject_ids)
     return model.posespace.discrete_mle(
-        poses, params.posespace)
+        params.posespace, poses)
 
 
 def init(
@@ -121,14 +123,15 @@ def init(
     seed: int = 0,
     morph_kws: dict = {},
     posespace_kws: dict = {}
-    ) -> JointParameters:
+    ) -> JointTrainedParams:
     morph_params = model.morph.init(
         hyperparams.morph, observations,
         reference_subject, seed,
         **morph_kws)
-    poses = model.morph.pose_mle(
-        observations,
-        morph_params.with_hyperparams(hyperparams.morph))
+    poses = model.morph.inverse_transform(
+        morph_params.with_hyperparams(hyperparams.morph),
+        observations.keypts,
+        observations.subject_ids)
     posespace_params = model.posespace.init(
         hyperparams.posespace,
         observations,
@@ -137,5 +140,5 @@ def init(
         seed,
         **posespace_kws
     )
-    return JointParameters(posespace_params, morph_params)
+    return JointTrainedParams(posespace_params, morph_params)
     
