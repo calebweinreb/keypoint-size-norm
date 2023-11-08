@@ -32,7 +32,7 @@ def generate(
         N = N, M = M,
         **cfg['morph']['hyperparam'])
 
-    morph_params = afm.sample_parameters(
+    morph_params = model.morph.sample_parameters(
         rkey = jr.PRNGKey(cfg['morph']['seed']),
         hyperparams = morph_hyperparams,
         **cfg['morph']['param_sample'])
@@ -73,6 +73,7 @@ defaults = dict(
             upd_var_modes = 1,
             upd_var_ofs = 1,
             reference_subject = 0,
+            identity_subject = 2,
         ),
         param_sample = dict(
             update_std = 0.3,

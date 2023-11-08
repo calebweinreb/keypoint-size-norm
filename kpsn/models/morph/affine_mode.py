@@ -14,6 +14,7 @@ from ...util import pca, computations
 from ...util.computations import (
     broadcast_batch, stacked_take)
 
+
 class AFMTrainedParameters(NamedTuple):
     """
     Parameter set describing an affine mode morph.
@@ -28,11 +29,14 @@ class AFMTrainedParameters(NamedTuple):
     
     @staticmethod
     def create(
+        hyperparams: 'AFMHyperparams',
         mode_updates: Float[Array, "N M L"],
         offset_updates: Float[Array, "N M"]) -> 'AFMTrainedParameters':
         return AFMTrainedParameters(
-            mode_updates = mode_updates,
-            offset_updates = offset_updates)
+            mode_updates = AFMParameters.normalize_mode_updates(
+                mode_updates, hyperparams.identity_subject),
+            offset_updates = AFMParameters.normalize_mode_updates(
+                offset_updates, hyperparams.identity_subject))
 
     def with_hyperparams(self, hyperparams):
         return AFMParameters(self, hyperparams)
@@ -57,25 +61,34 @@ class AFMHyperparams(NamedTuple):
     upd_var_ofs: Scalar
     modes: Float[Array, "M L"]
     offset: Float[Array, "M"]
+    identity_subject: int
 
     def as_static_dynamic_parts(self):
         return ((self.N, self.M, self.L),
                 (self.upd_var_ofs, self.upd_var_modes,
-                 self.modes, self.offset))
+                 self.modes, self.offset,
+                 self.identity_subject))
     
     @staticmethod
     def from_static_dynamic_parts(static, dynamic):
         return AFMHyperparams(
             N = static[0], M = static[1], L = static[2],
             upd_var_modes = dynamic[0], upd_var_ofs = dynamic[1],
-            modes = dynamic[2], offset = dynamic[3])
+            modes = dynamic[2], offset = dynamic[3],
+            identity_subject = dynamic[4])
 
 
 class AFMParameters(NamedTuple):
+    
     trained_params: AFMTrainedParameters
     hyperparams: AFMHyperparams
+    
+    HyperparamClass = AFMHyperparams
+    TrainedParamClass = AFMTrainedParameters
+
 
     # parameter passthroughs
+    # ----------------------
     N = property(lambda self: self.hyperparams.N)
     M = property(lambda self: self.hyperparams.M)
     L = property(lambda self: self.hyperparams.L)
@@ -83,19 +96,29 @@ class AFMParameters(NamedTuple):
     upd_var_modes = property(lambda self: self.hyperparams.upd_var_modes)
     modes = property(lambda self: self.hyperparams.modes)
     offset = property(lambda self: self.hyperparams.offset)
-    mode_updates = property(lambda self: self.trained_params.mode_updates)
-    offset_updates = property(lambda self: self.trained_params.offset_updates)
 
-    # no normalized parameters
-    # def offsets(self):
-    #     return AFMParameters.normalize_offsets(self.params.offsets)
+    # normalized parameters
+    # ---------------------
+    @property
+    def offset_updates(self):
+        return AFMParameters.normalize_offset_updates(
+            self.trained_params.offset_updates,
+            self.hyperparams.identity_subject)
     
-    # @staticmethod
-    # def normalize_offsets(offsets):
-    #     return offsets #- offsets.mean(axis = -1, keepdims = True)
+    @staticmethod
+    def normalize_offset_updates(offset_updates, identity_subject):
+        return offset_updates.at[identity_subject].set(0)
     
-    HyperparamClass = AFMHyperparams
-    TrainedParamClass = AFMTrainedParameters
+    @property
+    def mode_updates(self):
+        return AFMParameters.normalize_mode_updates(
+            self.trained_params.mode_updates,
+            self.hyperparams.identity_subject)
+    
+    @staticmethod
+    def normalize_mode_updates(mode_updates, identity_subject):
+        return mode_updates.at[identity_subject].set(0)
+    
 
 
 def get_transform(
@@ -184,6 +207,7 @@ def sample_hyperparams(
     upd_var_modes: float,
     upd_var_ofs: float,
     offset_std: float,
+    identity_subject: int
     ) -> AFMHyperparams:
     r"""
     Sample a set of `AFMHyperparams`
@@ -199,12 +223,14 @@ def sample_hyperparams(
     rkey = jr.split(rkey, 2)
     return AFMHyperparams(
         N = N, M = M, L = L,
+        identity_subject = identity_subject,
         upd_var_modes = upd_var_modes, upd_var_ofs = upd_var_ofs,
         modes = jnp.array(scipy.stats.special_ortho_group.rvs(
                 M, random_state = np.array(rkey)[0, 0]
             )[:, :L]),
         offset = jnp.random.randn(M) * offset_std,
     )
+
 
 def sample_parameters(
     rkey: PRNGKey,
@@ -232,6 +258,7 @@ def sample_parameters(
     """
     rkey = jr.split(rkey, 6)
     ret = AFMTrainedParameters.create(
+        hyperparams = hyperparams,
         mode_updates = update_std * jr.normal(rkey[4],
             shape = (hyperparams.N, hyperparams.M, hyperparams.L)),
         offset_updates = offset_std * jr.normal(rkey[5],
@@ -269,6 +296,7 @@ def init_hyperparams(
     N: int, M: int, L: int,
     upd_var_modes: float,
     upd_var_ofs: float,
+    identity_subject: int,
     reference_subject: int,
     seed: int = 0
     ):
@@ -280,6 +308,7 @@ def init_hyperparams(
         N = N, M = M, L = L,
         upd_var_modes = upd_var_modes,
         upd_var_ofs = upd_var_ofs,
+        identity_subject = identity_subject,
         modes = pcs._pcadata.pcs()[:L, :].T,
         offset = pcs._center
     )
@@ -299,6 +328,7 @@ def init(
         for subj_kpts in subjwise_keypts])
 
     return AFMTrainedParameters.create(
+        hyperparams = hyperparams,
         offset_updates = offset_updates,
         mode_updates = jnp.zeros([hyperparams.N, hyperparams.M, hyperparams.L]),
     )

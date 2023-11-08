@@ -5,13 +5,15 @@ import time
 import json
 
 
-def save_results(output_fmt, fmt, data, omit = (), verbose = True):
+def save_results(output_fmt, fmt, savefunc, omit = (), verbose = True):
     if fmt in omit: return
     path = output_fmt.format(fmt)
     dirname = os.path.dirname(path)
-    if not os.path.exists(dirname) and verbose:
-        print(f"Creating directory {dirname}")
-    jl.dump(data, path)
+    if not os.path.exists(dirname):
+        if verbose:
+            print(f"Creating directory {dirname}")
+        os.makedirs(dirname)
+    savefunc(path)
     if verbose:
         print(f"Saved outputs: {fmt}")
 

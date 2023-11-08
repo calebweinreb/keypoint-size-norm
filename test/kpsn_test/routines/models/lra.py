@@ -11,6 +11,7 @@ defaults = dict(
         L = 1,
         upd_var_modes = 1,
         upd_var_ofs = 1,
+        identity_subject = 2,
     ),
     init = dict()
 )
