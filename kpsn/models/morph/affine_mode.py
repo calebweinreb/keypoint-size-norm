@@ -266,7 +266,7 @@ def reports(
 
 def init_hyperparams(
     observations: Observations,
-    N: int, L: int,
+    N: int, M: int, L: int,
     upd_var_modes: float,
     upd_var_ofs: float,
     reference_subject: int,
@@ -277,7 +277,7 @@ def init_hyperparams(
         observations.keypts, observations.subject_ids, reference_subject)
     pcs = pca.fit_with_center(ref_keypts)
     return AFMHyperparams(
-        N = N, M = observations.keypts.shape[-1], L = L,
+        N = N, M = M, L = L,
         upd_var_modes = upd_var_modes,
         upd_var_ofs = upd_var_ofs,
         modes = pcs._pcadata.pcs()[:L, :].T,

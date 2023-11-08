@@ -77,7 +77,6 @@ def plot_morph_action(
     morphed = afm.transform(morph_params,
         vectors.T[None], # [1, n_vector, morph_in_dim])
         sess_ids = np.array(subject_whitelist)[:, None])
-    print("morphed:", morphed.shape)
     n_vector = vectors.shape[1]
     N = len(subject_whitelist)
     for i_subj, subj_id in enumerate(subject_whitelist):

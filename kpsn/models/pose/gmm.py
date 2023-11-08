@@ -516,7 +516,7 @@ GMMPoseSpaceModel = PoseSpaceModel(
     pose_logprob = pose_logprob,
     aux_distribution = aux_distribution,
     log_prior = log_prior,
-    init_hyperparams = sample_hyperparams,
+    init_hyperparams = init_hyperparams,
     init = init,
     reports = reports
 )

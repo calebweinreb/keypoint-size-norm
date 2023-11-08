@@ -3,14 +3,37 @@ import seaborn as sns
 from matplotlib import gridspec
 
 from jaxtyping import Float, Array, Integer
-from typing import Tuple, Union
+from typing import Tuple, Union, Iterable
+from sklearn import mixture
 import jax.numpy as jnp
 import numpy as np
 
-from .fitting import gaussian_mle
 from kpsn import util
 from kpsn.models import pose
 from kpsn.models.pose import gmm
+
+def gaussian_mle(
+    x: Iterable[Float[Array, "N M"]]
+    ) -> Tuple[Iterable[Float[Array, "M"]], Iterable[Float[Array, "M M"]]]:
+    """
+    Compute mean and covariance of Gaussian MLE for multiple samples.
+    
+    Args:
+        x: List, tuple, or array-like of samples
+    
+    Returns:
+        means: Array of mean vectors.
+        covs: Array of covariance matrices.
+    """
+    M = x[0].shape[-1]
+    means = np.empty([len(x), M])
+    covs = np.empty([len(x), M, M])
+    for i in range(len(x)):
+        gm = mixture.GaussianMixture(n_components = 1,).fit(x[i])
+        means[i] = gm.means_
+        covs[i] = gm.covariances_
+    return means, covs
+
 
 def ellipse_from_cov(
     x: Float [Array, "2"],
@@ -255,29 +278,28 @@ def subjectwise_mixture_plot(
 
 def sampled_mixture_plot(
     fig,
-    pose_hyperparams: gmm.GMMHyperparams,
-    pose_model: gmm.GMMParameters,
+    pose_params: gmm.GMMParameters,
     latents: gmm.GMMPoseStates,
     obs: pose.Observations,
     subject_whitelist: Tuple[int] = None,
 ):
     if subject_whitelist is None:
-        subject_whitelist = np.arange(pose_hyperparams.N)
+        subject_whitelist = np.arange(pose_params.N)
     N = len(subject_whitelist)
 
     gs = gridspec.GridSpec(
-        4, N ,
-        height_ratios = [4, 4, 1.5, 1.5])
+        3, N,
+        height_ratios = [4, 4, 1.5])
     ax = np.array([[
         fig.add_subplot(gs[r, c])
         for c in range(N)]for r in range(3)])
 
-    comp_pal = np.array(sns.color_palette('Set1', n_colors = pose_hyperparams.L))
+    comp_pal = np.array(sns.color_palette('Set1', n_colors = pose_params.L))
 
     empirical_means, empirical_covs = gaussian_mle(util.computations.unstack(
         arr = latents.poses,
         ixs = latents.components,
-        N = pose_hyperparams.L, axis = 0
+        N = pose_params.L, axis = 0
     ))
 
     vrng = None
@@ -286,22 +308,13 @@ def sampled_mixture_plot(
 
         scatrng = subjectwise_mixture_plot(
             ax = ax[0, i_subj],
-            n_components = pose_hyperparams.L,
+            n_components = pose_params.L,
             data = obs.unstack(obs.keypts)[subj_id],
             component_ids = obs.unstack(latents.components)[subj_id],
             model_means = None, model_covs = None,
             compare_means = None, compare_covs = None,
             pal = comp_pal
         )
-        # ax[0, i_subj].scatter(
-        #     x = scatterdat[:, 0],
-        #     y = scatterdat[:, 1],
-        #     c = comp_pal[obs.unstack(latents.components)[i_subj]],
-        #     s = 1,
-        # )
-        # scatrng = scatter_vrng(scatterdat)
-        # sns.despine(ax=ax[0, i_subj])
-        # ax[0, i_subj].set_aspect(1.)
         vrng = scatrng if vrng is None else combine_vrng(scatrng, vrng)
         if i_subj != 0:
             ax[0, i_subj].sharex(ax[0, 0])
@@ -309,39 +322,27 @@ def sampled_mixture_plot(
 
         vrng = combine_vrng(vrng, subjectwise_mixture_plot(
             ax = ax[1, i_subj],
-            n_components = pose_hyperparams.L,
+            n_components = pose_params.L,
             data = obs.unstack(latents.poses)[subj_id],
             component_ids = obs.unstack(latents.components)[subj_id],
-            model_means = pose_model.means,
+            model_means = pose_params.means,
             # model_means = None,
-            model_covs = pose_model.covariances(),
+            model_covs = pose_params.covariances(),
             compare_means = empirical_means,
             compare_covs = empirical_covs,
             pal = comp_pal,
         ))
 
-        # ax[1, i_subj].scatter(
-        #     x = obs.unstack(latents.poses)[i_subj][:, 0],
-        #     y = obs.unstack(latents.poses)[i_subj][:, 1],
-        #     c = comp_pal[obs.unstack(latents.components)[i_subj]],
-        #     s = 1,)
-        # sns.despine(ax=ax[1, i_subj])
-        # ax[1, i_subj].set_aspect(1.)
         ax[1, i_subj].sharex(ax[0, 0])
         ax[1, i_subj].sharey(ax[0, 0])
 
-        # vrng = combine_vrng(vrng, plot_cov_ellipses_comparison(
-        #     pose_model.means, pose_model.covariances(),
-        #     empirical_means, empirical_covs,
-        #     pal = comp_pal, ax = ax[1, i_subj],
-        #     alpha_range = (0.2, 0.4)))
 
         empirical_latent_dist = jnp.histogram(
             obs.unstack(latents.components)[subj_id],
-            jnp.arange(pose_hyperparams.L+1) - 0.5,
+            jnp.arange(pose_params.L+1) - 0.5,
             density = True)[0]
         compare_dirichlet_blocks(
-            pose_model.weights()[subj_id],
+            pose_params.weights()[subj_id],
             [empirical_latent_dist],
             pal = comp_pal,
             ax = ax[2, i_subj],

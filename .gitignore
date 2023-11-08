@@ -2,6 +2,10 @@
 testing
 update_pypi.sh
 .vscode
+/plots
+/results
+/test/runs
+/test/scripts
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
