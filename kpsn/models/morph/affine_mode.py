@@ -73,7 +73,7 @@ class AFMHyperparams(NamedTuple):
     def from_static_dynamic_parts(static, dynamic):
         return AFMHyperparams(
             N = static[0], M = static[1], L = static[2],
-            upd_var_modes = dynamic[0], upd_var_ofs = dynamic[1],
+            upd_var_ofs = dynamic[0], upd_var_modes = dynamic[1],
             modes = dynamic[2], offset = dynamic[3],
             identity_sess = dynamic[4])
 
@@ -280,7 +280,7 @@ def log_prior(params: AFMParameters) -> dict:
     ).log_prob(flat_updates)
 
     return dict(
-        offset = offset_logp,
+        offset = 0*offset_logp,
         mode = mode_logp,)
 
 

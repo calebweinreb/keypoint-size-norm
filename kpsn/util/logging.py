@@ -45,12 +45,19 @@ def _single_key_repr(tree_key):
     if isinstance(tree_key, pt.DictKey): return tree_key.key
     if isinstance(tree_key, pt.SequenceKey): return tree_key.idx
     if isinstance(tree_key, pt.GetAttrKey): return tree_key.name
+
 def _keystr(path, arr = None):
     size_string = "" if arr is None else ("" if arr.size == len(arr) else
         f' [{arr.shape[1]}]')
     return "/".join(_single_key_repr(k) for k in path) + size_string
             
+def _index(tree, path):
+    paths_vals, _ = tree_flatten_with_path(tree)
+    for path, val in paths_vals:
+        if path == path: return val
+    raise IndexError(f"No element {path} in {tree}")
 
-
-
+def _all_paths(tree):
+    paths_vals, _ = tree_flatten_with_path(tree)
+    return tuple(path for path, val in paths_vals)
         

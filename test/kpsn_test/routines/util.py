@@ -68,14 +68,19 @@ def deepen_dict(d):
             curr_dir = curr_dir[to_enter]
             path = path[1:]
         curr_dir[path[0]] = d[k]
-    print("Deepended:", ret)
     return ret
 
     
-def update(default, new):
+def update(default, new, warn_not_present = True):
     """Overrwrite defaults given by the routine file for its configs"""
-    if isinstance(default, dict):
-        return {k: update(default[k], new[k]) if k in new else default[k]
-                for k in default}
-    else:
-        return new 
+    def update_recurse(default, new, path):
+        if isinstance(default, dict):
+            for k in new:
+                if k not in default and warn_not_present:
+                    print(f"Warning: tried to update {'.'.join(path + (k,))}, which is not in defaults.")
+            return {k: update_recurse(default[k], new[k], path = path + (k,))
+                    if k in new else default[k]
+                    for k in default}
+        else:
+            return new 
+    return update_recurse(default, new, ())

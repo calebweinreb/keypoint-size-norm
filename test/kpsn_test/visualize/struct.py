@@ -47,4 +47,9 @@ def axes_by_age_and_id(
     return ret
 
 
+def flat_grid(total, n_col):
+    n_row = int(np.ceil(total / n_col))
+    fig, ax = plt.subplots(n_row, n_col, figsize = (3 * n_col, 2 * n_row))
+    return fig, ax
+
 
