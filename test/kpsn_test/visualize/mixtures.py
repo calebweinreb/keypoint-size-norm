@@ -29,6 +29,8 @@ def gaussian_mle(
     means = np.empty([len(x), M])
     covs = np.empty([len(x), M, M])
     for i in range(len(x)):
+        if len(x[i]) < 2:
+            means[i] = covs[i] = None; continue
         gm = mixture.GaussianMixture(n_components = 1,).fit(x[i])
         means[i] = gm.means_
         covs[i] = gm.covariances_
@@ -117,8 +119,12 @@ def combine_vrng(*vrngs):
     Returns:
         :param vrng: Tuple of `xrng`, `yrng`"""
     vmins, vmaxs = zip(*(np.array(vrng).T for vrng in vrngs))
-    vmin = np.minimum(*vmins)
-    vmax = np.maximum(*vmaxs)
+    vmins = np.stack(vmins, axis = 0)
+    vmaxs = np.stack(vmaxs, axis = 0)
+    vmins[~np.isfinite(vmins)] = np.nan
+    vmaxs[~np.isfinite(vmaxs)] = np.nan
+    vmin = np.nanmin(vmins, axis = 0)
+    vmax = np.nanmax(vmaxs, axis = 0)
     return np.array([vmin, vmax]).T
 
 def apply_vrng(ax, vrng):
@@ -148,16 +154,17 @@ def plot_cov_ellipses_comparison(
     **artist_kwargs
     ):
 
-    vrng1 = plot_many_fading_cov_ellipses(
+    vrng = plot_many_fading_cov_ellipses(
         x1, A1,
         pal = np.zeros([len(x1), 3]), ax = ax,
         **{'lw': 0.5, **artist_kwargs})
-    vrng2 = plot_many_fading_cov_ellipses(
-        x2, A2,
-        pal = pal,
-        ax = ax,
-        **{**artist_kwargs, 'fill': True, 'lw': 0})
-    vrng = combine_vrng(vrng1, vrng2)
+    if x2 is not None:
+        vrng2 = plot_many_fading_cov_ellipses(
+            x2, A2,
+            pal = pal,
+            ax = ax,
+            **{**artist_kwargs, 'fill': True, 'lw': 0})
+        vrng = combine_vrng(vrng, vrng2)
 
     return vrng
         

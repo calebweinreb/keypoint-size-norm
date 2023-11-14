@@ -70,20 +70,27 @@ def _mstep_objective(
 
     params = query_params.with_hyperparams(hyperparams)
 
-    poses = model.morph.inverse_transform(
-        params.morph, observations.keypts, observations.subject_ids)
+    poses, jacobian_logdets = model.morph.inverse_transform(
+        params.morph, observations.keypts, observations.subject_ids,
+        return_determinants = True)
     pose_probs = model.posespace.pose_logprob(
         params.posespace, poses, observations.subject_ids)
-    dataset_prob = (pose_probs * aux_pdf).sum()
+    jacobian_logdets = jacobian_logdets[..., None] # (Nt, L)
+    keypt_probs = pose_probs + jacobian_logdets
+    
+    dataset_prob = (keypt_probs * aux_pdf).sum()
     
     morph_prior = model.morph.log_prior(params.morph)
     posespace_prior = model.posespace.log_prior(params.posespace)
     
     # return morph_prior
     return {
-        'dataset': dataset_prob,
-        'morph': morph_prior,
-        'pose': posespace_prior}
+        'objectives': {
+            'dataset': dataset_prob,
+            'morph': morph_prior,
+            'pose': posespace_prior},
+        'aux': {'logjac': jacobian_logdets.mean()}
+    }
 
 
 def _mstep_loss(
@@ -95,9 +102,10 @@ def _mstep_loss(
         hyperparams: joint_model.JointParameters,
         aux_pdf: Float[Array, "Nt L"], 
         ):
-        objectives = _mstep_objective(
+        scalars = _mstep_objective(
             model, emissions, params, hyperparams, aux_pdf)
-        loss = -_pytree_sum(objectives)
+        loss = -_pytree_sum(scalars['objectives'])
+        objectives = {**scalars["objectives"], **scalars['aux']}
         return loss, objectives
     return step_loss_
 
@@ -127,7 +135,6 @@ def construct_jitted_mstep(
                 grads)
         
         if update_blacklist is not None:
-            # jax.debug.print("before {}", grads)
             grads = pt.tree_map_with_path(
                 lambda pth, grad: (
                     jnp.zeros_like(grad)
@@ -135,7 +142,6 @@ def construct_jitted_mstep(
                            for p in update_blacklist)
                     else grad),
                 grads)
-            # jax.debug.print("after {}", grads)
         
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)

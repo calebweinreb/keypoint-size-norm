@@ -107,8 +107,9 @@ class AFMParameters(NamedTuple):
     
     @staticmethod
     def normalize_offset_updates(offset_updates, identity_sess):
-        return offset_updates
-        # return offset_updates.at[identity_sess].set(0)
+        if identity_sess is None:
+            return offset_updates
+        return offset_updates.at[identity_sess].set(0)
     
     @property
     def mode_updates(self):
@@ -118,8 +119,9 @@ class AFMParameters(NamedTuple):
     
     @staticmethod
     def normalize_mode_updates(mode_updates, identity_sess):
-        return mode_updates
-        # return mode_updates.at[identity_sess].set(0)
+        if identity_sess is None:
+            return mode_updates
+        return mode_updates.at[identity_sess].set(0)
     
 
 
@@ -180,15 +182,16 @@ def transform(
 def inverse_transform(
     params: AFMParameters,
     keypts: Float[Array, "*#K M"],
-    sess_ids: Integer[Array, "*#K"]
-    ) -> Float[Array, "*#K M"]:
+    sess_ids: Integer[Array, "*#K"],
+    return_determinants: bool = False
+    ) -> Tuple[Float[Array, "*#K M"], Float[Array, "*#K"]]:
 
     linear_parts, pop_offset, sess_offsets = get_transform(params)
-    linear_inv = jla.inv(linear_parts)
+    linear_invs = jla.inv(linear_parts)
 
     # broadcast transform arrays
     batch_shape = sess_ids.shape
-    linear_inv = linear_inv[sess_ids] # (batch, M, M)
+    linear_inv = linear_invs[sess_ids] # (batch, M, M)
     pop_offset = broadcast_batch(pop_offset, batch_shape) # (batch, M)
     sess_offsets = sess_offsets[sess_ids] # (batch, M)
 
@@ -196,8 +199,13 @@ def inverse_transform(
     centered = (keypts - sess_offsets)[..., None] # (batch, M, 1)
     updated = (linear_inv @ centered)[..., 0] # (batch, M)
     uncentered = updated + pop_offset # (batch, M)
-
-    return uncentered
+    
+    if return_determinants:
+        linear_invs_logdet = jnp.log(jla.det(linear_invs))
+        # jax.debug.print("linvsh {}", linear_invs_det)
+        linear_inv_logdet = linear_invs_logdet[sess_ids]
+        return uncentered, linear_inv_logdet
+    else: return uncentered
     
 
 

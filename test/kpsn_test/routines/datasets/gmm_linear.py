@@ -73,7 +73,7 @@ defaults = dict(
             upd_var_modes = 1,
             upd_var_ofs = 1,
             reference_subject = 0,
-            identity_sess = 2,
+            identity_sess = None,
         ),
         param_sample = dict(
             update_std = 0.3,
