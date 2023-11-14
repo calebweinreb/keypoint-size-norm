@@ -112,9 +112,10 @@ The model parameters $\theta = (\phi, m, Q, \pi, \beta)$ are fit using expectati
 
 \paragraph{M-step} Given $q(z)$ from the E-step, obtain new parameter estimates by optimizing the following objective with respect to $\theta = (\phi, m, Q, \pi, \beta)$ (using gradient ascent).
 \begin{align}
-    A(\theta; \theta^*) & = \sum_{n,t} \EE_q \log P(y_{n,t}, z_{n,t} \mid \theta) + \log P(\theta) \\
-    & =  \sum_{n,t} q(z_{n,t}) \left[ \log \NN(f^{-1}(y_{n,t}, \phi_n) \mid m_{z_{n,t}}, Q_{z_{n,t}}) + \log \pi_{n, z_{n, t}} \right] + \log P(\theta) \label{eq:A-modeled}
+    & A(\theta; \theta^*)  = \sum_{n,t} \EE_q \log P(y_{n,t}, z_{n,t} \mid \theta) + \log P(\theta) \\
+    & =  \sum_{n,t} q(z_{n,t}) \log \left[ \NN(f^{-1}(y_{n,t}, \phi_n) \mid m_{z_{n,t}}, Q_{z_{n,t}}) \cdot \det(J)  \cdot \pi_{n, z_{n, t}} \right] + \log P(\theta) \label{eq:A-modeled}
 \end{align}
+where $J$ is the Jacobian of $f^{-1}$ (in its first argument) evaluated at $y_{n,t}$.
 
 \subsection{Initialization}
 Initialization of the morph parameters $\phi$ is described in section XXX. Given morph parameters, we fit a standard Gaussian mixture model to the points $x_{n,t} = f^{-1}(y_{n,t}, \phi_n)$ (e.g. with sklearn), yielding mixture components $(m_z, Q_z), z=1,...,L$ and cluster weights $\lambda_{n,t,z}$ for each data point. Using the weights, we initialize $\pi$ and $\beta$ as follows.
