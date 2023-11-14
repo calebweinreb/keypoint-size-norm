@@ -107,7 +107,8 @@ class AFMParameters(NamedTuple):
     
     @staticmethod
     def normalize_offset_updates(offset_updates, identity_sess):
-        return offset_updates.at[identity_sess].set(0)
+        return offset_updates
+        # return offset_updates.at[identity_sess].set(0)
     
     @property
     def mode_updates(self):
@@ -117,7 +118,8 @@ class AFMParameters(NamedTuple):
     
     @staticmethod
     def normalize_mode_updates(mode_updates, identity_sess):
-        return mode_updates.at[identity_sess].set(0)
+        return mode_updates
+        # return mode_updates.at[identity_sess].set(0)
     
 
 
@@ -280,7 +282,7 @@ def log_prior(params: AFMParameters) -> dict:
     ).log_prob(flat_updates)
 
     return dict(
-        offset = 0*offset_logp,
+        offset = offset_logp,
         mode = mode_logp,)
 
 
@@ -304,6 +306,7 @@ def init_hyperparams(
     ref_keypts = stacked_take(
         observations.keypts, observations.subject_ids, reference_subject)
     pcs = pca.fit_with_center(ref_keypts)
+
     return AFMHyperparams(
         N = N, M = M, L = L,
         upd_var_modes = upd_var_modes,

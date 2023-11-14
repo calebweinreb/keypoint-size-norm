@@ -1,6 +1,7 @@
 from typing import Tuple
 from jaxtyping import Float, Array
 import jax.numpy as jnp
+import jax.numpy.linalg as jla
 import numpy as np
 
 import seaborn as sns
@@ -46,20 +47,38 @@ def plot_subjectwise_scalar_comparison(
         
 
 
-def plot_paired_vectors(
+def plot_vector(
     ax,
-    dims: Float[Array, "2 2"],
-    origins: Float[Array, "2 2"] = np.zeros([2, 2]),
-    artist_kws = {},
+    dims: Float[Array, "2"],
+    origins: Float[Array, "2"] = np.zeros([2, 2]),
+    arrow_kws = {},
+    origin_kws = {},
     display_scale = 1,
     ):
-    for i in range(2):
-        ax[i].arrow(
-            origins[i, 0], origins[i, 1], 
-            display_scale * (dims[i, 0] - origins[i, 0]), 
-            display_scale * (dims[i, 1] - origins[i, 1]),
-            length_includes_head = True,
-            **artist_kws)
+    vec = display_scale * (dims - origins)
+    ax.arrow(
+        origins[0], origins[1], 
+        vec[0], vec[1],
+        length_includes_head = True,
+        head_length = 0.08 * jla.norm(vec),
+        head_width = 0.08 * jla.norm(vec),
+        **arrow_kws)
+    ax.plot(
+        [origins[0]], [origins[1]],
+        'ko', **origin_kws)
+
+
+def _find_pc_display_scale(
+    data: Float[Array, "n_pts n_dim"],
+    pc: Float[Array, "n_dim"],
+    center: Float[Array, "n_dim"],
+    pct_scale = 0.5):
+    """Find scale of a PC vector to be visible in data scale."""
+    norm_pc = pc / jla.norm(pc)
+    pc_coord = ((data - center[None]) * norm_pc[None]).sum(axis = -1)
+    data_range = pc_coord[pc_coord > 0].max()
+    desired_norm = pct_scale * data_range
+    return desired_norm / jla.norm(pc)
 
 
 def plot_morph_action(
@@ -67,45 +86,49 @@ def plot_morph_action(
     morph_params: afm.AFMParameters,
     vectors: Float[Array, "morph_in_dim n_vector"],
     display_scale = 1,
+    display_scale_dataset = Float[Array, "n_pts morph_in_dim"],
     subject_whitelist: Tuple[int] = None,
     ):
     """Display input-output mapping of a morph on given vectors."""
+    
     if subject_whitelist is None:
         subject_whitelist = np.arange(morph_params.N)
-    
+    n_vector = vectors.shape[1]
+
     _, pop_offset, sess_offsets = afm.get_transform(morph_params)
     morphed = afm.transform(morph_params,
         vectors.T[None], # [1, n_vector, morph_in_dim])
         sess_ids = np.array(subject_whitelist)[:, None])
-    n_vector = vectors.shape[1]
-    N = len(subject_whitelist)
+    
+    if display_scale_dataset is not None:
+        display_scale = max([_find_pc_display_scale(
+            display_scale_dataset,
+            vectors[:, i_vector] - pop_offset,
+            pop_offset,
+            pct_scale = 0.5 * display_scale)
+            for i_vector in range(n_vector)])
+    
     for i_subj, subj_id in enumerate(subject_whitelist):
         for i_vector, ls, col in zip(
                 range(min(n_vector, 2)),
                 ['-', '-'],
                 ['.4', '.6']
                 ):
-            plot_paired_vectors(
-                ax[:, i_subj],
-                jnp.stack([
-                    morphed[subj_id, i_vector, :],
-                    vectors[:, i_vector]
-                ], axis = 0),
-                origins = jnp.stack([
-                    sess_offsets[subj_id],
-                    pop_offset,
-                ]),
-                artist_kws = dict(
-                    lw = 1,
-                    head_width = 0.6 * np.sqrt(display_scale),
-                    head_length = 0.6 * np.sqrt(display_scale),
-                    color = col, ls = ls),
-                display_scale = display_scale
-            )
-        ax[0, i_subj].plot(
-            [sess_offsets[subj_id, 0]], [sess_offsets[subj_id, 1]],
-            'ko', ms = 3)
-        ax[1, i_subj].plot([pop_offset[0]], [pop_offset[1]], 'ko', ms = 3)
+
+            arrow_kws = dict(lw = 1, color = col, ls = ls)
+            origin_kws = dict(ms = 3)
+
+            plot_vector(
+                ax[0, i_subj],
+                morphed[subj_id, i_vector, :],
+                sess_offsets[subj_id],
+                arrow_kws, origin_kws, display_scale)
+            plot_vector(
+                ax[1, i_subj],
+                vectors[:, i_vector],
+                pop_offset,
+                arrow_kws, origin_kws, display_scale)
+
 
 
 def plot_morph_action_standard_basis(
@@ -125,6 +148,7 @@ def plot_morph_dimensions(
     ax,
     morph_params, 
     display_scale = 1,
+    display_scale_dataset = None,
     subject_whitelist = None,
     ):
     """Display input-output mapping of a 2D affine-modal morph.
@@ -134,9 +158,11 @@ def plot_morph_dimensions(
     with the image plotted in the first row (keypoint space) and the
     morph mode plotted in the second row (pose space).
     """
+    mode_poses = morph_params.modes + morph_params.offset[:, None]
     plot_morph_action(
         ax,
         morph_params,
-        morph_params.modes,
+        mode_poses,
         display_scale,
+        display_scale_dataset,
         subject_whitelist)

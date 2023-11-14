@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 from kpsn.util import keypt_io
 
@@ -47,9 +48,12 @@ def axes_by_age_and_id(
     return ret
 
 
-def flat_grid(total, n_col):
+def flat_grid(total, n_col, ax_size, subplot_kw = {}):
     n_row = int(np.ceil(total / n_col))
-    fig, ax = plt.subplots(n_row, n_col, figsize = (3 * n_col, 2 * n_row))
+    fig, ax = plt.subplots(
+        n_row, n_col,
+        figsize = (ax_size[0] * n_col, ax_size[1] * n_row),
+        **subplot_kw)
     return fig, ax
 
 

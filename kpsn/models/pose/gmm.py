@@ -493,8 +493,8 @@ def log_prior(
     ).log_prob(params.weights())
 
     return dict(
-        pop_weight  = 0*pop_logpdf,
-        subj_weight = 0*subj_logpdf,
+        pop_weight  = pop_logpdf,
+        subj_weight = subj_logpdf,
     )
     
 
