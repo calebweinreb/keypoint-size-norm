@@ -1,3 +1,4 @@
+from bidict import bidict
 import joblib, os, glob
 import numpy as np
 
@@ -177,6 +178,24 @@ def get_groups(metadata, key):
     metadata[key] = np.array(metadata[key])
     return group_keys, group_ixs
 
+def get_groups_dict(metadata_val):
+    """
+    Parameters
+    ----------
+    metadata_val : dict
+        Mapping session names to metadata values
+    """
+    groups = {}
+    for sess_name, val in metadata_val.items():
+        if val not in groups: groups[val] = []
+        groups[val].append(sess_name)
+    sorted_keys = sorted(groups.keys())
+    return sorted_keys, tuple(groups[k] for k in sorted_keys)
+
+def metadata_zip(*vals):
+    return {k: tuple(v[k] for v in vals) for k in vals[0]}
+
+
 def to_feats(kpts):
     return kpts.reshape(kpts.shape[:-2] + (kpts.shape[-2] * kpts.shape[-1],))
 
@@ -229,6 +248,30 @@ def groups_to_flat_arrays(group_keys, group_ixs, features):
         keypt_sets[group_key] = k.reshape([k.shape[0], -1])
     return slices, keypt_sets
 
+def ids_from_slices(flat_dataset, slices):
+    """
+    Parameters
+    ----------
+    flat_dataset : (n_samp, *feature_dims)
+        Flattened dataset with total number of samples along first dimension.
+    slices : Dict[Any, slice]
+        Indexing slices returned by to_flat_array
+    
+    Returns
+    -------
+    id_by_name : bidict[Any, int]
+        Bidirectional mapping between session names and session ids
+    sample_ids : np.ndarray[int], (n_samp,)
+        Sesssion id of each sample in the flat dataset
+    """
+    id_by_name = bidict()
+    ids = np.full([len(flat_dataset)], -1)
+    for i, (name, slc) in enumerate(slices.items()):
+        id_by_name[name] = i
+        ids[slc] = i
+    assert (ids == -1).sum() == 0, ("Slices do not tile full dataset")
+
+    return id_by_name, ids
 
 def apply_across_flat_array(f, slices, *arrays):
     """

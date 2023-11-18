@@ -104,7 +104,7 @@ class GMMParameters(NamedTuple):
     cholesky = property(lambda self: self.trained_params.cholesky)
     
     def covariances(self) -> Float32[Array, "L M M"]:
-        return expand_tril_cholesky(self.cholesky, n = self.means.shape[1])
+        return expand_tril_cholesky(self.cholesky, n = self.M)
 
     @classmethod
     def cholesky_from_covariances(self, covariances: Float32[Array, "L M M"]):

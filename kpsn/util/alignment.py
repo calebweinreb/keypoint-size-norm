@@ -3,8 +3,8 @@ import scipy.spatial.transform
 
 from .keypt_io import keypt_by_name
 
-frontal_pts = [keypt_by_name['shldr'], keypt_by_name['head']]
-ventral_pts = [keypt_by_name['hips'], keypt_by_name['back']]
+anterior_pts = [keypt_by_name['shldr'], keypt_by_name['head']]
+posterior_pts = [keypt_by_name['hips'], keypt_by_name['back']]
 
 def _optionally_apply_as_batch(func):
     def wrapped(keypts, *a, **kw):
@@ -18,22 +18,140 @@ def _optionally_apply_as_batch(func):
     return wrapped
 
 
-@_optionally_apply_as_batch
-def sagittal_align(keypts):
+def _optionally_apply_as_zipped_batch(func):
+    def wrapped(keypts, *a, **kw):
+        if (isinstance(keypts, list)
+            or isinstance(keypts, tuple)
+            ):
+            return tuple(zip(*[func(k, *a, **kw) for k in keypts]))
+        else:
+            return func(keypts, *a, **kw)
+    return wrapped
+
+
+def _get_com(keypts, at_keypt = None):
+    if at_keypt is None:
+        anterior_com = keypts[:, anterior_pts].mean(axis = 1, keepdims = True)
+        posterior_com = keypts[:, posterior_pts].mean(axis = 1, keepdims = True)
+        com = (anterior_com + posterior_com) / 2
+    else:
+        com = keypts[:, [keypt_by_name[at_keypt]]]
+    com[..., 2] = 0
+    return com
+
+
+@_optionally_apply_as_zipped_batch
+def sagittal_align(
+    keypts,
+    origin_keypt = None,
+    return_inverse = False,):
     """
     keypts: shape (t, keypt, dim)
     """
-    # center hips/back on (0,0,0)
-    ventral_com = keypts[:, ventral_pts].mean(axis = 1, keepdims = True)
-    frontal_com = keypts[:, frontal_pts].mean(axis = 1, keepdims = True)
-    com = (ventral_com + frontal_com) / 2
-    ventral_centered = keypts - com
+
+    # center hips/back or origin-keypt on (0,0,0)
+    com = _get_com(keypts, origin_keypt)
+    centered = keypts - com
+
     # rotate shoulders/head to align with (1,1,0)
-    frontal_com = ventral_centered[:, frontal_pts].mean(axis = 1)
-    theta = np.arctan2(frontal_com[:, 1], frontal_com[:, 0])
+    centered_ant_com = centered[:, anterior_pts].mean(axis = 1)
+    theta = np.arctan2(centered_ant_com[:, 1], centered_ant_com[:, 0])
     # shape: (t, 3, 3)
     R = scipy.spatial.transform.Rotation.from_rotvec(
         (-theta[:, None]) * np.array([0, 0, 1])[None, :]
     ).as_matrix()
-    frontal_rotated = (R[:, None] @ ventral_centered[..., None])[..., 0]
-    return frontal_rotated
+    rotated = (R[:, None] @ centered[..., None])[..., 0]
+    
+    if return_inverse:
+        return rotated, com, theta
+    else:
+        return rotated
+    
+
+def inverse_saggital_align(kpts, centroid, theta):
+    R = scipy.spatial.transform.Rotation.from_rotvec(
+        (theta[:, None]) * np.array([0, 0, 1])[None, :]
+    ).as_matrix()
+    rotated = (R[:, None] @ kpts[..., None])[..., 0]
+    uncentered = rotated + centroid
+    return uncentered
+
+
+def sagittal_align_remove_redundant_subspace(
+    kpts,
+    origin_keypt = None,
+    skel = None,
+    ):
+    """
+    Aligning introduces a dimensiona in keypoint space with no variation. This
+    function maps keypoints to abstract features in a lower dimensional subspace
+    without that redundancy.
+
+    kpts : array, (...batch, n_keypts * n_dim)
+        Array of keypoints flattened to features
+    origin_keypt : str
+        Name of keypoint used as origin in saggital_align
+    skel : skeleton.Armature
+
+    Returns
+    -------
+    feats : array, (..., batch, n_true_dim)
+    """
+    if origin_keypt is None:
+        # gamma transform of kpms
+        raise NotImplementedError
+    
+    mask = np.ones(kpts.shape[-1], dtype = bool).reshape([skel.n_kpts, -1])
+    mask[skel.keypt_by_name[origin_keypt], :2] = 0
+    mask = mask.ravel()
+    return kpts[..., mask]
+
+
+def sagittal_align_insert_redundant_subspace(
+    feats,
+    origin_keypt = None,
+    skel = None
+    ):
+    """Inverse to `sagittal_align_remove_redundant_subspace.
+    """
+    if origin_keypt is None:
+        # gamma transform of kpms
+        raise NotImplementedError
+    
+    # insert a [xaxis, zaxis] before supposed index of `origin_keypt` in feats
+    n_spatial_dim = (feats.shape[-1] + 2) // skel.n_kpts
+    ix = skel.keypt_by_name[origin_keypt] * n_spatial_dim
+    return np.insert(np.zeros(feats.shape[:-1] + (2,)), ix, axis = -1)
+
+
+    
+
+
+def scalar_align(keypts, return_inverse = False):
+    """
+    Parameters
+    ----------
+    keypts : List[numpy array (frames, keypts, spatial)]"""
+    
+    absolute_scales = []
+    for sess_i in range(len(keypts)):
+        anterior_com = keypts[sess_i][:, anterior_pts].mean(axis = 1)
+        posterior_com = keypts[sess_i][:, posterior_pts].mean(axis = 1)
+        absolute_scales.append(np.median(
+            np.linalg.norm(anterior_com - posterior_com, axis = -1),
+        axis = 0))
+    
+    scales = np.array(absolute_scales) / np.mean(absolute_scales)
+    scaled_keypts = [
+        keypts[i] / scales[i]
+        for i in range(len(keypts))]
+
+    if return_inverse:
+        return scaled_keypts, scales
+    else: return scaled_keypts
+
+
+def inverse_scalar_align(keypts, scales):
+    return [
+        keypts[i] * scales[i]
+        for i in range(len(keypts))]

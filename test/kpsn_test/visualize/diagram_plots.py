@@ -6,9 +6,6 @@ from kpsn.util.keypt_io import keypt_parents
 
 def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}):
     
-    ax.scatter(keypt_frame[..., xaxis], keypt_frame[..., yaxis],
-        **{'s': 3, **scatter_kw})
-    
     for i, parent in enumerate(keypt_parents):
         if i == 0:
             continue
@@ -16,8 +13,11 @@ def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}):
         curr_parent = keypt_frame[parent]
         ax.plot((curr_child[xaxis], curr_parent[xaxis]),
                 (curr_child[yaxis], curr_parent[yaxis]),
-                **{'color':'black', 'linestyle':':', **line_kw})
+                **{'color':'black', **line_kw})
         
+    ax.scatter(keypt_frame[..., xaxis], keypt_frame[..., yaxis],
+        **{'s': 3, **scatter_kw})
+    
     ax.set_aspect(1.)
     
 

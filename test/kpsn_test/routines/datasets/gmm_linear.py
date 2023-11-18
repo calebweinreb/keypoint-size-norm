@@ -5,10 +5,10 @@ from kpsn.models import pose
 
 import jax.random as jr
 
-def generate(
-    N: int,
-    M: int,
-    cfg: dict):
+def generate(cfg: dict):
+
+    N = cfg['n_subj']
+    M = cfg['n_dim']
 
     model = joint_model.JointModel(
         morph = afm.AffineModeMorph,
@@ -47,11 +47,20 @@ def generate(
     gt_obs = pose.Observations(
         model.morph.transform(gt_params.morph, sampled_poses.poses, sess_ids),
         sess_ids)
+    sess_ix = {str(i): i for i in range(N)}
+    session_slice = {str(i): slice(i * cfg['n_frames'], (i + 1) * cfg['n_frames'])
+                     for i in range(N)}
     
-    return gt_params, gt_obs
+    return (N, M), gt_obs, dict(
+        model_params = gt_params,
+        session_ix = sess_ix,
+        session_slice = session_slice
+        )
     
 
 defaults = dict(
+    n_subj = 3,
+    n_dim = 2,
     n_frames = 100,
     pose = dict(
         hyperparam = dict(

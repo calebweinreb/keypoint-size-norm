@@ -7,8 +7,17 @@ import seaborn as sns
 import numpy as np
 
 
+def mstep_lengths(mstep_losses):
+    mstep_lengths = []
+    for i in range(0, len(mstep_losses)):
+        if np.any(~np.isfinite(mstep_losses[i])):
+            mstep_lengths.append(np.argmax(~np.isfinite(mstep_losses[i])))
+        else:
+            mstep_lengths.append(len(mstep_losses[i]))
+    return mstep_lengths
 
-def em_loss(loss_hist, mstep_losses):
+
+def em_loss(loss_hist, mstep_losses, mstep_relative = True):
     fig, ax = plt.subplots(figsize = (9, 1.7), ncols = 3)
     
     pal = sns.hls_palette(len(mstep_losses) * 5, h = 0.7, l = 0.4)[:len(mstep_losses)]
@@ -23,12 +32,21 @@ def em_loss(loss_hist, mstep_losses):
             curr_loss = mstep_losses[i]
         mstep_lengths.append(len(curr_loss))
         
+        if mstep_relative:
+            plot_y = (curr_loss - curr_loss.min()) / (curr_loss.max() - curr_loss.min())
+        else: plot_y = curr_loss
+
         ax[1].plot(
             np.linspace(0, 1, len(curr_loss)),
-            (curr_loss - curr_loss.min()) / (curr_loss.max() - curr_loss.min()),
+            plot_y,
             color = pal[i], lw = 1)
         
+    if not mstep_relative:
+        ax[1].set_yscale('log')
+        
     ax[0].plot(loss_hist, 'k-')
+    if loss_hist.max() > 2 * loss_hist[0]:
+        ax[0].set_ylim(None, 2 * loss_hist[0])
     ax[2].plot(np.arange(len(mstep_lengths)), mstep_lengths, 'k-')
 
     ax[1].set_xlabel("Loss profile")

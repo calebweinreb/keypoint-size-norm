@@ -371,7 +371,7 @@ def mode_components(
             modes.
     """
     dim_expand = (None,) * (len(poses.shape) - 1)
-    modes = params.modes()[dim_expand]
+    modes = params.modes[dim_expand]
     coords = (poses[..., None] * modes).sum(axis = 1) # (*#K, L)
     components = coords[..., None, :] * modes # (*#K, M L)
     complement = poses - components.sum(axis = -1)
@@ -381,26 +381,11 @@ def mode_components(
 def as_offset_only(
     params: AFMParameters,
     ) -> AFMParameters:
-    params, hyperparams = params.params, params.hyperparams
+    params, hyperparams = params.trained_params, params.hyperparams
     return AFMParameters(
-        params = AFMTrainedParameters(
-            uniform_scale = 0 * params.uniform_scale,
-            modes = params.modes,
-            updates = 0 * params.updates,
-            offsets = params.offsets),
-        hyperparams = hyperparams)
-
-    
-def as_uniform_scale(
-    params: AFMParameters,
-    ) -> AFMParameters:
-    params, hyperparams = params.params, params.hyperparams
-    return AFMParameters(
-        params = AFMTrainedParameters(
-            uniform_scale = params.uniform_scale,
-            modes = params.modes,
-            updates = 0 * params.updates,
-            offsets = params.offsets),
+        trained_params = AFMTrainedParameters(
+            mode_updates = 0 * params.mode_updates,
+            offset_updates = params.offset_updates),
         hyperparams = hyperparams)
 
 
@@ -410,7 +395,7 @@ def with_scaled_modes(
     ) -> AFMParameters:
     params, hyperparams = params.params, params.hyperparams
     return AFMParameters(
-        params = AFMTrainedParameters(
+        trained_params = AFMTrainedParameters(
             uniform_scale = params.uniform_scale,
             modes = params.modes,
             updates = scale_factor * params.updates,
@@ -422,28 +407,23 @@ def with_sliced_modes(
     params: AFMParameters,
     slc: slice
     ) -> AFMParameters:
-    params, hyperparams = params.params, params.hyperparams
-    if hyperparams.modes is None:
-        param_modes = params.modes[:, slc]
-        hyper_modes = None
-        L = param_modes.shape[-1]
-    else:
-        param_modes = params.modes
-        hyper_modes = hyperparams.modes[:, slc]
-        L = hyper_modes.shape[-1]
+    params, hyperparams = params.trained_params, params.hyperparams
+    hyper_modes = hyperparams.modes[:, slc]
+    L = hyper_modes.shape[-1]
     return AFMParameters(
-        params = AFMTrainedParameters(
-            uniform_scale = params.uniform_scale,
-            modes = param_modes,
-            updates = params.updates[:, :, slc],
-            offsets = params.offsets),
+        trained_params = AFMTrainedParameters(
+            mode_updates = params.mode_updates[:, :, slc],
+            offset_updates = params.offset_updates),
         hyperparams = AFMHyperparams(
             N = hyperparams.N,
             M = hyperparams.M,
             L = L,
             upd_var_ofs = hyperparams.upd_var_ofs,
             upd_var_modes = hyperparams.upd_var_modes,
-            modes = hyper_modes))
+            modes = hyper_modes,
+            offset = hyperparams.offset,
+            identity_sess = hyperparams.identity_sess))
+
 
 def with_locked_modes(
     params: AFMParameters,

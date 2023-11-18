@@ -170,7 +170,9 @@ def _mstep(
     hyperparams: joint_model.JointHyperparams,
     optimizer: optax.GradientTransformation,
     n_steps: int,
-    log_every: int,
+    batch_size: int = None,
+    batch_seed = 29,
+    log_every: int = -1,
     progress = False,
     tol: float = None,
     stop_window: int = 10,
@@ -202,16 +204,36 @@ def _mstep(
     loss_hist = np.full([n_steps], np.nan)
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
     hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
+    param_trace = logging.ReportTrace(n_steps)
+
+    if batch_size is not None:
+        batch_rkey_seed = jr.PRNGKey(batch_seed)
+        unstacked_ixs = computations.unstacked_ixs(
+            emissions.subject_ids,
+            N = hyperparams.posespace.N)
+        generate_batch = lambda rkey: computations.stacked_batch(
+            rkey, unstacked_ixs, batch_size)
     
     # ---- Run M-step iterations
 
     for step_i in iter:
 
+        if batch_size is not None:
+            batch_rkey_seed, batch = generate_batch(batch_rkey_seed)
+            step_obs = pose.Observations(
+                keypts = emissions.keypts[batch],
+                subject_ids = emissions.subject_ids[batch])
+            step_aux = aux_pdf[batch]
+        else:
+            step_obs = emissions
+            step_aux = aux_pdf
+
         curr_params, opt_state, (loss_value, objectives) = step(
             opt_state, curr_params,
-            emissions, hyper_stat, hyper_dyna,
-            aux_pdf)
+            step_obs, hyper_stat, hyper_dyna,
+            step_aux)
         loss_hist[step_i] = loss_value
+        param_trace.record(curr_params, step_i)
         
         if (log_every > 0) and (not step_i % log_every):
             print(f"Step {step_i} : loss = {loss_value}")
@@ -224,7 +246,7 @@ def _mstep(
             loss_hist = loss_hist[:step_i+1]
             break
 
-    return loss_hist, curr_params, objectives
+    return loss_hist, curr_params, objectives, param_trace
 
 
 def iterate_em(
@@ -240,11 +262,15 @@ def iterate_em(
     batch_seed: int = 23,
     update_blacklist = None,
     learning_rate: float = 5e-3,
+    scale_lr: bool = False,
+    full_dataset_objectives = True,
     mstep_n_steps: int = 2000,
     mstep_log_every: int = -1,
     mstep_progress = False,
     mstep_tol: float = None,
     mstep_stop_window: int = 10,
+    mstep_batch_size = None,
+    mstep_batch_seed = 29,
     mstep_update_max = None,
     return_mstep_losses = False,
     return_param_hist = False,
@@ -262,10 +288,25 @@ def iterate_em(
     loss_hist = np.empty([n_steps])
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
     report_trace = logging.ReportTrace(n_steps)
+
     if return_mstep_losses:
         mstep_losses = np.full([n_steps, mstep_n_steps], np.nan)
-    if return_param_hist:
+    if return_param_hist is True:
         param_hist = [curr_params]
+    elif return_param_hist == 'trace':
+        param_trace = logging.ReportTrace(n_steps + 1)
+        param_trace.record(curr_params, 0)
+    elif return_param_hist == 'mstep':
+        param_trace = logging.ReportTrace(n_steps)
+    
+
+    if scale_lr:
+        if mstep_batch_size is not None: step_data_size = mstep_batch_size
+        elif batch_size is not None: step_data_size = batch_size
+        else: step_data_size = emissions.keypts.shape[0]
+        print("Adjusting learning rate:", 
+              f"{learning_rate} -> {learning_rate / step_data_size}")
+        learning_rate /= step_data_size
 
     optimizer = optax.adam(learning_rate = learning_rate)
     jitted_mstep = construct_jitted_mstep(model, optimizer,
@@ -278,32 +319,37 @@ def iterate_em(
         unstacked_ixs = computations.unstacked_ixs(
             emissions.subject_ids,
             N = hyperparams.posespace.N)
+        generate_batch = lambda rkey: computations.stacked_batch(
+            rkey, unstacked_ixs, batch_size)
 
     for step_i in iter:
         
-        if batch_size is not None:
-            batch_rkey_seed, batch_rkey = jr.split(batch_rkey_seed, 2)
-            batch = computations.stacked_batch(
-                batch_rkey, unstacked_ixs, batch_size)
-            step_obs = pose.Observations(
-                keypts = emissions.keypts[batch],
-                subject_ids = emissions.subject_ids[batch])
-        else:
-            step_obs = emissions
-
         aux_pdf = jitted_estep(
-            observations = step_obs,
+            observations = emissions,
             estimated_params = curr_params,
             hyperparams_static = hyper_stat,
             hyperparams_dynamic = hyper_dyna)
-        loss_hist_mstep, fit_params_mstep, mstep_end_objective = _mstep(
+        
+        if batch_size is not None:
+            batch_rkey_seed, batch = generate_batch(batch_rkey_seed)
+            step_obs = pose.Observations(
+                keypts = emissions.keypts[batch],
+                subject_ids = emissions.subject_ids[batch])
+            step_aux = aux_pdf[batch]
+        else:
+            step_obs = emissions
+            step_aux = aux_pdf
+
+        loss_hist_mstep, fit_params_mstep, mstep_end_objective, mstep_param_trace = _mstep(
             model = model,
             init_params = curr_params,
-            aux_pdf = aux_pdf,
+            aux_pdf = step_aux,
             emissions = step_obs,
             hyperparams = hyperparams,
             optimizer = optimizer,
             n_steps = mstep_n_steps,
+            batch_size = mstep_batch_size,
+            batch_seed = mstep_batch_seed + step_i,
             log_every = mstep_log_every,
             progress = mstep_progress,
             tol = mstep_tol,
@@ -314,15 +360,31 @@ def iterate_em(
         )
 
         loss_hist[step_i] = loss_hist_mstep[-1]
+        start_params = curr_params
         curr_params = fit_params_mstep
         if return_mstep_losses:
             mstep_losses[step_i, :len(loss_hist_mstep)] = loss_hist_mstep
-        if return_param_hist:
+        if return_param_hist is True:
             param_hist.append(curr_params)
+        elif return_param_hist == 'trace':
+            param_trace.record(curr_params, step_i + 1)
+        elif return_param_hist == 'mstep':
+            param_trace.record(mstep_param_trace.as_dict(), step_i)
 
         if return_reports:
+            aux_reports = {}
+            if full_dataset_objectives:
+                aux_reports['dataset_logprob'] = _mstep_objective(
+                    model, emissions, curr_params, hyperparams,
+                    aux_pdf = jitted_estep(
+                        observations = emissions,
+                        estimated_params = start_params,
+                        hyperparams_static = hyper_stat,
+                        hyperparams_dynamic = hyper_dyna)
+                )['objectives']['dataset']
             report_trace.record(dict(
-                logprobs = mstep_end_objective),
+                logprobs = mstep_end_objective,
+                **aux_reports),
                 step_i)
         
         if (log_every > 0) and (not step_i % log_every):
@@ -340,6 +402,7 @@ def iterate_em(
         
     ret = loss_hist, curr_params.with_hyperparams(hyperparams)
     if return_mstep_losses: ret = ret + (mstep_losses,)
-    if return_param_hist: ret = ret + (param_hist,)
+    if return_param_hist is True: ret = ret + (param_hist,)
+    elif return_param_hist in ['trace', 'mstep']: ret = ret + (param_trace,)
     if return_reports: ret = ret + (report_trace,)
     return ret 

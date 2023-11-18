@@ -266,8 +266,9 @@ def stacked_batch(
     """
     Sample stacked batch indices from a list of index arrays
     """
-    return restack([
-        jr.choice(rkey, ixs, (batch_size,), replace = replace)
+    rkey_new, rkey_use = jr.split(rkey, 2)
+    return rkey_new, restack([
+        jr.choice(rkey_use, ixs, (batch_size,), replace = replace)
         for ixs in unstacked_ixs])
 
 

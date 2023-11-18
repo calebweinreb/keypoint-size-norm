@@ -40,6 +40,14 @@ class ReportTrace():
             elif label_mode == 'yaxis': ax.set_ylabel(_keystr(path, plottable))
             else: ax.set_xlabel(_keystr(path, plottable))
 
+    def as_dict(self): return self._tree
+
+    def __len__(self): return self._n_steps
+
+    def __getitem__(self, step): return pt.tree_map(
+        lambda arr: arr[step],
+        self._tree)
+
 
 def _single_key_repr(tree_key):
     if isinstance(tree_key, pt.DictKey): return tree_key.key

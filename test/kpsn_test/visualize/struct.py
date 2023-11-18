@@ -13,11 +13,21 @@ def axes_by_age_and_id(
     sharey = True,
     figsize = None):
     
-    ages, age_groups = keypt_io.get_groups(dict(by = subject_ages), 'by')
-    ageids, ageid_groups = keypt_io.get_groups(dict(by = list(zip(subject_ages, subject_ids))), 'by')
+    if isinstance(subject_ages, dict):
+        ages, age_groups = keypt_io.get_groups_dict(subject_ages)
+        ageids, ageid_groups = keypt_io.get_groups_dict(
+            keypt_io.metadata_zip(subject_ages, subject_ids))
+    else:
+        ages, age_groups = keypt_io.get_groups(
+            dict(by = subject_ages), 'by')
+        ageids, ageid_groups = keypt_io.get_groups(
+            dict(by = list(zip(subject_ages, subject_ids))), 'by')
+    
     max_per_age = max(len(grp) for grp in age_groups)
 
     summ_col_ofs = 1 if summative_col else 0
+    if figsize is not None:
+        figsize = (figsize[0] * (max_per_age + 1), figsize[1] * len(ages))
     fig, ax = plt.subplots(len(ages), max_per_age + summ_col_ofs, sharex = sharex, sharey = sharey, figsize = figsize)
 
     if axes_off:
@@ -54,6 +64,9 @@ def flat_grid(total, n_col, ax_size, subplot_kw = {}):
         n_row, n_col,
         figsize = (ax_size[0] * n_col, ax_size[1] * n_row),
         **subplot_kw)
-    return fig, ax
+    ax = ax.ravel()
+    for a in ax[total:]:
+        a.set_axis_off()
+    return fig, ax[:total]
 
 
