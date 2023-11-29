@@ -4,7 +4,7 @@ import numpy as np
 
 from kpsn.util.keypt_io import keypt_parents
 
-def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}):
+def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}, label = None, labelon = 'line'):
     
     for i, parent in enumerate(keypt_parents):
         if i == 0:
@@ -13,17 +13,35 @@ def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}):
         curr_parent = keypt_frame[parent]
         ax.plot((curr_child[xaxis], curr_parent[xaxis]),
                 (curr_child[yaxis], curr_parent[yaxis]),
-                **{'color':'black', **line_kw})
+                **{'color':'black', **line_kw, **(
+                    {} if (labelon == 'scatter' or i != 1) else {'label': label}
+                )})
         
     ax.scatter(keypt_frame[..., xaxis], keypt_frame[..., yaxis],
-        **{'s': 3, **scatter_kw})
+        **{'s': 3, **scatter_kw, **(
+            {} if labelon == 'line' else {'label': label}
+        )})
     
     ax.set_aspect(1.)
     
 
-# def apply_transform_x(trasnsform)
+def pose_gallery_ixs(
+    keypts,
+    skel):
+    nframe = len(keypts)
+    keypts = keypts.reshape([nframe, skel.n_kpts, -1])
+    head_ht = np.argsort(keypts[:, skel.keypt_by_name['head'], 2])
+    head_ln = np.argsort(keypts[:, skel.keypt_by_name['head'], 0])
+    back_wd = np.argsort(keypts[:, skel.keypt_by_name['back'], 1])
+    quantile = lambda ix_arr, pct: ix_arr[int(pct * nframe)]
+    return {
+        'high': quantile(head_ht, 0.1),
+        'low': quantile(head_ht, 0.9),
+        'extend': quantile(head_ln, 0.2),
+        'small': quantile(head_ln, 0.9),
+        'left': quantile(back_wd, 0.2),
+        'right': quantile(back_wd, 0.8)}
 
-# def bar_label(fig, ax, text, bar_width)
 
 
 def voronoi_finite_polygons_2d(vor, radius=None):

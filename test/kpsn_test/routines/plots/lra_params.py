@@ -22,6 +22,8 @@ def plot(
     fig, ax = plt.subplots(2, len(steps),
         figsize = (4 * len(steps), 3 * (hyperparams.L + 1)),
         sharex = 'col', sharey = 'row')
+    if ax.ndim < 2:
+        ax = ax.reshape([2, len(steps)])
 
     line_kw = dict(lw = 0.3)
     for col, step in enumerate(steps):
@@ -30,6 +32,7 @@ def plot(
             sess_name = dataset['metadata']['session_ix'].inv[sess_i]
             sess_color = dataset['metadata'][cfg['colorby']][sess_name]
             step_len = mstep_lengths[step]
+            print("lra:", step_params.morph.mode_updates.shape, step_params.morph.offset_updates.shape)
             ax[0, col].plot(
                 step_params.morph.offset_updates[:step_len, sess_i],
                 color = pal[sess_color], **line_kw)

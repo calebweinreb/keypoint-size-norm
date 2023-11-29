@@ -21,12 +21,15 @@ def plot(
     fig, ax = plt.subplots(4 * hyperparams.L, len(steps),
         figsize = (2 * len(steps), 4 * (hyperparams.L * 2)),
         sharex = 'col', sharey = False)
+    if ax.ndim < 2:
+        ax = ax.reshape([4 * hyperparams.L, len(steps)])
 
-    for col, step in enumerate(steps):
-        for comp_i in range(hyperparams.L):
-            if not (comp_i == 0 and col == 0):
-                for i in range(4):
-                    ax[comp_i + i *  hyperparams.L, col].sharey(ax[i * hyperparams.L, 0])
+
+    # for col, step in enumerate(steps):
+    #     for comp_i in range(hyperparams.L):
+    #         if not (comp_i == 0 and col == 0):
+    #             for i in range(4):
+    #                 ax[comp_i + i *  hyperparams.L, col].sharey(ax[i * hyperparams.L, 0])
 
     line_kw = dict(lw = 0.3)
     for col, step in enumerate(steps):
@@ -34,29 +37,44 @@ def plot(
         step_len = mstep_lengths[step]
         diag_mask = np.eye(hyperparams.M).astype('bool')
         for comp_i in range(hyperparams.L):
+
             ax[comp_i, col].plot(
                 step_params.posespace.means[:step_len, comp_i],
                 color = pal[comp_i], **line_kw)
-            ax[comp_i + hyperparams.L, col].plot(
-                step_params.posespace.with_hyperparams(hyperparams
-                    ).covariances()[:step_len, comp_i][:, diag_mask],
-                color = pal[comp_i], **line_kw)
+            
+            if cfg['eigs']:
+                cov_eig = np.linalg.eigvalsh(step_params.posespace.with_hyperparams(hyperparams
+                    ).covariances()[:step_len, comp_i])
+                ax[comp_i + hyperparams.L, col].plot(
+                    cov_eig,
+                    color = pal[comp_i], **line_kw)
+            else:
+                ax[comp_i + hyperparams.L, col].plot(
+                    step_params.posespace.with_hyperparams(hyperparams
+                        ).covariances()[:step_len, comp_i][:, diag_mask],
+                    color = pal[comp_i], **line_kw)
+                
             ax[comp_i + 2 * hyperparams.L, col].plot(
                 step_params.posespace.with_hyperparams(hyperparams
                     ).covariances()[:step_len, comp_i][:, ~diag_mask][:, ::51],
                 color = pal[comp_i], **line_kw)
+            
             ax[comp_i + 3 * hyperparams.L, col].plot(
                 np.linalg.det(step_params.posespace.with_hyperparams(hyperparams
                     ).covariances()[:step_len, comp_i]),
                 color = pal[comp_i], **line_kw)
             
             ax[comp_i + hyperparams.L, col].set_yscale('log')
-            ax[comp_i + 3 * hyperparams.L, col].set_yscale('log')
+            if cfg['logdet']:
+                ax[comp_i + 3 * hyperparams.L, col].set_yscale('log')
         ax[0, col].set_title(f"Step {step}")
 
 
     ax[0, 0].set_ylabel(f"Component means")
-    ax[hyperparams.L, 0].set_ylabel(f"Component cov diag")
+    if cfg['eigs']:
+        ax[hyperparams.L, 0].set_ylabel(f"Component cov eigs")
+    else:
+        ax[hyperparams.L, 0].set_ylabel(f"Component cov diag")
     ax[2 * hyperparams.L, 0].set_ylabel(f"Component cov off-diag")
     ax[3 * hyperparams.L, 0].set_ylabel(f"Component cov det")
         
@@ -67,5 +85,7 @@ def plot(
 
 defaults = dict(
     stepsize = 1,
-    colorby = 'age'
+    colorby = 'age',
+    logdet = True,
+    eigs = False
 )

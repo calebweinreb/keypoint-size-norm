@@ -3,6 +3,8 @@ import scipy.spatial.transform
 
 from .keypt_io import keypt_by_name
 
+anterior_pt_name = 'shldr'
+anterior_pt = keypt_by_name[anterior_pt_name]
 anterior_pts = [keypt_by_name['shldr'], keypt_by_name['head']]
 posterior_pts = [keypt_by_name['hips'], keypt_by_name['back']]
 
@@ -29,13 +31,8 @@ def _optionally_apply_as_zipped_batch(func):
     return wrapped
 
 
-def _get_com(keypts, at_keypt = None):
-    if at_keypt is None:
-        anterior_com = keypts[:, anterior_pts].mean(axis = 1, keepdims = True)
-        posterior_com = keypts[:, posterior_pts].mean(axis = 1, keepdims = True)
-        com = (anterior_com + posterior_com) / 2
-    else:
-        com = keypts[:, [keypt_by_name[at_keypt]]]
+def _get_com(keypts, at_keypt):
+    com = keypts[:, [keypt_by_name[at_keypt]]]
     com[..., 2] = 0
     return com
 
@@ -43,7 +40,7 @@ def _get_com(keypts, at_keypt = None):
 @_optionally_apply_as_zipped_batch
 def sagittal_align(
     keypts,
-    origin_keypt = None,
+    origin_keypt,
     return_inverse = False,):
     """
     keypts: shape (t, keypt, dim)
@@ -54,7 +51,7 @@ def sagittal_align(
     centered = keypts - com
 
     # rotate shoulders/head to align with (1,1,0)
-    centered_ant_com = centered[:, anterior_pts].mean(axis = 1)
+    centered_ant_com = centered[:, anterior_pt]
     theta = np.arctan2(centered_ant_com[:, 1], centered_ant_com[:, 0])
     # shape: (t, 3, 3)
     R = scipy.spatial.transform.Rotation.from_rotvec(
@@ -77,10 +74,21 @@ def inverse_saggital_align(kpts, centroid, theta):
     return uncentered
 
 
+def _redundancy_mask(skel, origin_keypt):
+
+    mask = np.ones([skel.n_kpts, 3], dtype = bool)
+    # (x, z) of origin keypt locked to zero - remove
+    mask[skel.keypt_by_name[origin_keypt], :2] = 0
+    # (y,) of anterior keypt locked to zero - remove
+    mask[skel.keypt_by_name[anterior_pt_name], 1] = 0
+
+    return mask.ravel()
+
+
 def sagittal_align_remove_redundant_subspace(
     kpts,
-    origin_keypt = None,
-    skel = None,
+    origin_keypt,
+    skel,
     ):
     """
     Aligning introduces a dimensiona in keypoint space with no variation. This
@@ -97,34 +105,24 @@ def sagittal_align_remove_redundant_subspace(
     -------
     feats : array, (..., batch, n_true_dim)
     """
-    if origin_keypt is None:
-        # gamma transform of kpms
-        raise NotImplementedError
     
-    mask = np.ones(kpts.shape[-1], dtype = bool).reshape([skel.n_kpts, -1])
-    mask[skel.keypt_by_name[origin_keypt], :2] = 0
-    mask = mask.ravel()
+    mask = _redundancy_mask(skel, origin_keypt)
     return kpts[..., mask]
 
 
 def sagittal_align_insert_redundant_subspace(
     feats,
-    origin_keypt = None,
+    origin_keypt,
     skel = None
     ):
-    """Inverse to `sagittal_align_remove_redundant_subspace.
+    """Inverse to `sagittal_align_remove_redundant_subspace`.
     """
-    if origin_keypt is None:
-        # gamma transform of kpms
-        raise NotImplementedError
-    
-    # insert a [xaxis, zaxis] before supposed index of `origin_keypt` in feats
-    n_spatial_dim = (feats.shape[-1] + 2) // skel.n_kpts
-    ix = skel.keypt_by_name[origin_keypt] * n_spatial_dim
-    return np.insert(np.zeros(feats.shape[:-1] + (2,)), ix, axis = -1)
 
+    mask = _redundancy_mask(skel, origin_keypt)
+    ret = np.zeros(feats.shape[:-1] + (feats.shape[-1] + (~mask).sum(),))
+    ret[..., mask] = feats
+    return ret
 
-    
 
 
 def scalar_align(keypts, return_inverse = False):

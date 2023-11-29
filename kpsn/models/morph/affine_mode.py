@@ -161,7 +161,8 @@ def transform(
     morphed_poses:
         Array of poses under the morph transform.
     """ 
-
+    
+    sess_ids = jnp.array(sess_ids)
     
     linear_parts, pop_offset, sess_offsets = get_transform(params)
 
@@ -185,6 +186,8 @@ def inverse_transform(
     sess_ids: Integer[Array, "*#K"],
     return_determinants: bool = False
     ) -> Tuple[Float[Array, "*#K M"], Float[Array, "*#K"]]:
+
+    sess_ids = jnp.array(sess_ids)
 
     linear_parts, pop_offset, sess_offsets = get_transform(params)
     linear_invs = jla.inv(linear_parts)

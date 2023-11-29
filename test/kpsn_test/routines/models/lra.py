@@ -15,3 +15,9 @@ defaults = dict(
     ),
     init = dict()
 )
+
+def session_names_to_ixs(metadata, cfg):
+    id_sess = cfg['hyperparam']['identity_sess']
+    if id_sess is not None:
+        cfg['hyperparam']['identity_sess'] = metadata['session_ix'][id_sess]
+    return cfg

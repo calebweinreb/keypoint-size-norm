@@ -42,6 +42,8 @@ class ReportTrace():
 
     def as_dict(self): return self._tree
 
+    def map(self, func): self._tree = pt.tree_map(func, self._tree)
+
     def __len__(self): return self._n_steps
 
     def __getitem__(self, step): return pt.tree_map(

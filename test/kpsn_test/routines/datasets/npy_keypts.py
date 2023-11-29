@@ -1,5 +1,4 @@
-from kpsn.util import keypt_io
-from kpsn.util import alignment
+from kpsn.util import keypt_io, skeleton, alignment
 from kpsn.models import pose
 
 import numpy as np
@@ -48,7 +47,9 @@ def generate(
     all_feats = keypt_io.to_feats(all_keypts)
     if cfg['output_indep']:
         all_feats = alignment.sagittal_align_remove_redundant_subspace(
-            all_keypts, origin_keypt = cfg['origin_keypt'], skel = skeleton.default_armature)
+            all_feats,
+            origin_keypt = cfg['origin_keypt'],
+            skel = skeleton.default_armature)
 
     gt_obs = pose.Observations(all_feats, session_ids)
     return (n_sess, all_feats.shape[-1]), gt_obs, dict(

@@ -1,6 +1,6 @@
 from kpsn.models.morph import affine_mode as afm
 from kpsn.models.morph import linear_skeletal as ls
-from kpsn.util import skeleton
+from kpsn.util import skeleton, alignment
 from kpsn_test import visualize as viz
 import numpy as np
 
@@ -21,6 +21,11 @@ def plot(
     if cfg['reroot'] is not None:
         skel = skeleton.reroot(skel, cfg['reroot'])
     ls_mat = ls.construct_transform(skel, skel.keypt_by_name[skel.root])
+    param_hist = fit['param_hist']
+    print("orig:", param_hist.as_dict().posespace.means.shape)
+    if param_hist[0].posespace.means.ndim > 2:
+        param_hist.map(lambda arr: arr[:, -1])
+        print("new:", param_hist.as_dict().posespace.means.shape)
 
     metadata = dataset['metadata']
     sessions = metadata['session_ix'].keys()
@@ -32,10 +37,12 @@ def plot(
             params.morph,
             dataset['keypts'],
             dataset['subject_ids'])
-        keypts = morph_model.transform(
+        feats = morph_model.transform(
             params.morph,
             poses,
             np.full([len(poses)], metadata['session_ix'][cfg['ref_sess']]))
+        keypts = alignment.sagittal_align_insert_redundant_subspace(
+            feats, skel.root, skel)
         
         all_roots, all_bones = ls.transform(
             keypts.reshape([-1, skel.n_kpts, 3]), ls_mat)
