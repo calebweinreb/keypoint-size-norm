@@ -65,17 +65,28 @@ def load_cfg(string):
             try: return eval(s)
             except: return s
         
-        keyvals = [[kv.strip() for kv in s.split('=')]
-                   for s in string.split(':')]
-        keyvals = [
-            (kv[0], True) if len(kv) == 1 else (kv[0], kv[1])
-            for kv in keyvals if not ''.join(kv) == '']
-        
-        return deepen_dict({
-                try_eval(k): # LHS = key
-                try_eval(v)  # RHS = val
-            for k, v in keyvals
-        })
+        ret = {}
+        for kv in string.split(':'):
+            kv = [s.strip() for s in kv.split('=')]
+            if len(kv) == 1:
+                kv = kv[0]
+                if kv == '':
+                    continue
+                elif kv.endswith('.json'):
+                    with open(kv) as f:
+                        nested_kvs = json.load(f)
+                    print("json:", nested_kvs)
+                    nested_kvs = deepen_dict(nested_kvs)
+                    ret = update(ret, nested_kvs, warn_not_present=False, add=True)
+                else:
+                    print("flat:", repr(kv), string)
+                    deep_kv = deepen_dict({kv: True})
+                    ret = update(ret, deep_kv, warn_not_present=False, add=True)
+            else:
+                print("normal:", kv)
+                deep_kv = deepen_dict({kv[0]: try_eval(kv[1])})
+                ret = update(ret, deep_kv, warn_not_present=False, add=True)
+        return ret
 
 
 def deepen_dict(d):
@@ -93,16 +104,25 @@ def deepen_dict(d):
     return ret
 
     
-def update(default, new, warn_not_present = True):
+def update(default, new, warn_not_present = True, add = False):
     """Overrwrite defaults given by the routine file for its configs"""
     def update_recurse(default, new, path):
         if isinstance(default, dict):
+            # warn if there are instances in `new` that were not in `default`
             for k in new:
                 if k not in default and warn_not_present:
                     print(f"Warning: tried to update {'.'.join(path + (k,))}, which is not in defaults.")
-            return {k: update_recurse(default[k], new[k], path = path + (k,))
+            # construct dictionary with values in default updated
+            ret = {k: update_recurse(default[k], new[k], path = path + (k,))
                     if k in new else default[k]
                     for k in default}
+            # if we are updating with addition, then any subtrees in new that
+            # were not in `default` can be copied over
+            if add:
+                for k in new:
+                    if k not in default:
+                        ret[k] = new[k]
+            return ret
         else:
             return new 
     return update_recurse(default, new, ())

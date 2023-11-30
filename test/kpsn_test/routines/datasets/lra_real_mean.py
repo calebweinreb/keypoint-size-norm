@@ -5,6 +5,7 @@ from kpsn.util import keypt_io, alignment, skeleton
 from kpsn_test.routines.util import update
 from kpsn_test.routines.datasets import npy_keypts
 
+import jax.numpy as jnp
 import jax.random as jr
 
 def generate(
@@ -15,19 +16,25 @@ def generate(
         cfg = {**cfg, 'output_indep': True}
     )
 
+    tgt_sessions = [cfg['src_sess'], *cfg['tgt_sessions']]
+    new_sessions = [cfg['src_sess']] + [f'sim:{s}' for s in cfg['tgt_sessions']]
+    names_tgts = list(zip(new_sessions, tgt_sessions))
+    true_means = {n: gt_obs.keypts[metadata['session_slice'][s]].mean(axis = 0)
+             for n, s in names_tgts}
+
     # ----- set up identical poses for each session
     src_keypts = gt_obs.keypts[metadata['session_slice'][cfg['src_sess']]]
     slices, gt_all_poses = keypt_io.to_flat_array({
-        f'subj{i}': src_keypts for i in range(cfg['n_subj'])
+        n: src_keypts for n, s in names_tgts
     })
     session_ix, session_ids = keypt_io.ids_from_slices(gt_all_poses, slices)
 
     # ------ sample parameters and apply to poses
     morph_hyperparams = afm.init_hyperparams(
         observations = pose.Observations(gt_all_poses, session_ids),
-        N = cfg['n_subj'], M = M,
-        reference_subject = session_ix['subj0'],
-        identity_sess = session_ix['subj0'],
+        N = len(new_sessions), M = M,
+        reference_subject = session_ix[cfg['src_sess']],
+        identity_sess = session_ix[cfg['src_sess']],
         upd_var_modes = 0, # prior variance params don't matter - not learning
         upd_var_ofs = 0,
         **cfg['hyperparam'])
@@ -36,8 +43,12 @@ def generate(
         rkey = jr.PRNGKey(cfg['seed']),
         hyperparams = morph_hyperparams,
         **cfg['param_sample'])
-    
-    morph_params.trained_params.mean
+    morph_params = afm.AFMTrainedParameters(
+        mode_updates = 0*morph_params.mode_updates,
+        offset_updates = jnp.array([
+            true_means[session_ix.inverse[sess_ix]] - morph_hyperparams.offset
+            for sess_ix in range(len(new_sessions))
+        ]))
 
     params = morph_params.with_hyperparams(morph_hyperparams)
     all_feats = afm.transform(params, gt_all_poses, session_ids)
@@ -53,19 +64,19 @@ def generate(
     new_metadata = dict(
         session_ix = session_ix,
         session_slice = slices,
-        body = {f'subj{i}': i for i in range(cfg['n_subj'])},
+        body = {n: i for i, n in enumerate(new_sessions)},
         **{k: {sess: v[cfg['src_sess']] for sess in slices}
         for k, v in metadata.items() if k not in ['session_ix']
         if k not in ['session_ix', 'session_slice']})
     
-    return (cfg['n_subj'], M), new_obs, new_metadata
+    return (len(new_sessions), M), new_obs, new_metadata
     
     
 
 defaults = dict(
     src_sess = None,
+    tgt_sessions=None,
     **npy_keypts.defaults,
-    n_subj = 2,
     hyperparam = dict(
         L = 1,
     ),
