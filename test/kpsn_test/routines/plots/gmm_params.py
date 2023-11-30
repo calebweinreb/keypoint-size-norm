@@ -25,11 +25,11 @@ def plot(
         ax = ax.reshape([4 * hyperparams.L, len(steps)])
 
 
-    # for col, step in enumerate(steps):
-    #     for comp_i in range(hyperparams.L):
-    #         if not (comp_i == 0 and col == 0):
-    #             for i in range(4):
-    #                 ax[comp_i + i *  hyperparams.L, col].sharey(ax[i * hyperparams.L, 0])
+    for col, step in enumerate(steps):
+        for comp_i in range(hyperparams.L):
+            if not (comp_i == 0 and col == 0):
+                for i in range(4):
+                    ax[comp_i + i *  hyperparams.L, col].sharey(ax[i * hyperparams.L, 0])
 
     line_kw = dict(lw = 0.3)
     for col, step in enumerate(steps):

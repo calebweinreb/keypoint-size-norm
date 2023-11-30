@@ -41,8 +41,11 @@ def plot(
             params.morph,
             poses,
             np.full([len(poses)], metadata['session_ix'][cfg['ref_sess']]))
-        keypts = alignment.sagittal_align_insert_redundant_subspace(
-            feats, skel.root, skel)
+        if not cfg['input_indep']:
+            keypts = alignment.sagittal_align_insert_redundant_subspace(
+                feats, skel.root, skel)
+        else:
+            keypts = feats
         
         all_roots, all_bones = ls.transform(
             keypts.reshape([-1, skel.n_kpts, 3]), ls_mat)
@@ -74,4 +77,5 @@ defaults = dict(
     stepsize = 5,
     reroot = 'hips',
     groupby = 'age',
+    input_indep = True
     )

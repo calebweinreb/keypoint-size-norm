@@ -33,7 +33,7 @@ def _optionally_apply_as_zipped_batch(func):
 
 def _get_com(keypts, at_keypt):
     com = keypts[:, [keypt_by_name[at_keypt]]]
-    com[..., 2] = 0
+    # com[..., 2] = 0
     return com
 
 

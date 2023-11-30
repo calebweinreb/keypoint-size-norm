@@ -73,3 +73,12 @@ def flat_grid(total, n_col, ax_size, subplot_kw = {}, return_grid = False):
     return ret
 
 
+# def axis_color(ax, color):
+#     for side in ['top', 'bottom', 'left', 'right']:
+#         ax.spines[side].set_color(color)
+#     ax.xaxis.label.set_color(color)
+#     ax.yaxis.label.set_color(color)
+#     ax.tick_params(axis = 'x', colors = color)
+#     ax.tick_params(axis = 'y', colors = color)
+
+

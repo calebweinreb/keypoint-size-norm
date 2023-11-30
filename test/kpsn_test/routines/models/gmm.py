@@ -5,6 +5,7 @@ model = gmm.GMMPoseSpaceModel
 defaults = dict(
     hyperparam = dict(
         L = 5,
+        diag_eps = None,
         pop_weight_uniformity = 10,
         subj_weight_uniformity = 100,
     ),

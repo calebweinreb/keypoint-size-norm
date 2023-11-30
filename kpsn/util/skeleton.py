@@ -46,10 +46,10 @@ class Armature(NamedTuple):
     @property
     def n_kpts(self): return len(self.keypt_names)
 
-    def bone_name(self, i_bone):
+    def bone_name(self, i_bone, joiner = '-'):
         child_name = self.keypt_names[self.bones[i_bone, 0]]
         parent_name = self.keypt_names[self.bones[i_bone, 1]]
-        return f'{child_name}-{parent_name}'
+        return f'{child_name}{joiner}{parent_name}'
     
 
 default_armature = Armature(
@@ -57,6 +57,15 @@ default_armature = Armature(
     bones = bones,
     root = 'shldr'
 )
+
+names_armature = Armature(
+    keypt_names = np.array(['Shoulders', 'Back', 'Hips', 'Tail base', 'Head', 'L ear', 'R ear',
+       'Nose', 'L rear knee', 'L rear paw', 'R rear knee', 'R rear paw', 'L front paw',
+       'R front paw']),
+    bones = bones,
+    root = 'Shoulders'
+)
+
 
 
 

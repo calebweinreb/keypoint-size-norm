@@ -36,6 +36,8 @@ def generate(
         rkey = jr.PRNGKey(cfg['seed']),
         hyperparams = morph_hyperparams,
         **cfg['param_sample'])
+    
+    morph_params.trained_params.mean
 
     params = morph_params.with_hyperparams(morph_hyperparams)
     all_feats = afm.transform(params, gt_all_poses, session_ids)
@@ -44,7 +46,7 @@ def generate(
         all_feats = alignment.sagittal_align_insert_redundant_subspace(
             all_feats, cfg['origin_keypt'], skeleton.default_armature)
 
-    print("lrakp:", all_feats.shape)
+
     # ------ format new dataset and return
     new_obs = pose.Observations(all_feats, session_ids)
 

@@ -64,6 +64,8 @@ class GMMHyperparams(NamedTuple):
     :param N: Number of subjects.
     :param M: Pose space dimension.
     :param L: Number of mixture components.
+    :param diag_eps: Factor to add to diagonal of component covariance matrices
+        or `None`.
     :param eps: Observation error variance.
     :pop_weight_uniformity: Tighness of the distribution of expected cluster
         weights. Variance of population cluster weights is inversely
@@ -76,6 +78,7 @@ class GMMHyperparams(NamedTuple):
     N: int
     M: int
     L: int
+    diag_eps: float
     pop_weight_uniformity: float
     subj_weight_uniformity: float
 
@@ -95,6 +98,7 @@ class GMMParameters(NamedTuple):
     N = property(lambda self: self.hyperparams.N)
     M = property(lambda self: self.hyperparams.M)
     L = property(lambda self: self.hyperparams.L)
+    diag_eps = property(lambda self: self.hyperparams.diag_eps)
     pop_weight_uniformity = property(lambda self:
         self.hyperparams.pop_weight_uniformity)
     subj_weight_uniformity = property(lambda self:
@@ -104,10 +108,25 @@ class GMMParameters(NamedTuple):
     cholesky = property(lambda self: self.trained_params.cholesky)
     
     def covariances(self) -> Float32[Array, "L M M"]:
-        return expand_tril_cholesky(self.cholesky, n = self.M)
+        covs = expand_tril_cholesky(self.cholesky, n = self.M)
+        # addition of diagonal before extracting cholesky
+        if self.diag_eps is not None:
+            diag_ixs = jnp.diag_indices(self.M)
+            covs = covs.at[
+                ..., diag_ixs[0], diag_ixs[1]
+            ].add(self.diag_eps)
+        return covs
 
-    @classmethod
-    def cholesky_from_covariances(self, covariances: Float32[Array, "L M M"]):
+    @staticmethod
+    def cholesky_from_covariances(
+        covariances: Float32[Array, "L M M"],
+        diag_eps: float):
+        # undo addition of diagonal before extracting cholesky
+        if diag_eps is not None:
+            diag_ixs = jnp.diag_indices(covariances.shape[-1])
+            covariances = covariances.at[
+                ..., diag_ixs[0], diag_ixs[1]
+            ].add(-diag_eps)
         return extract_tril_cholesky(covariances) 
 
     def weights(self) -> Float[Array, "N L"]:
@@ -216,10 +235,12 @@ def sample_hyperparams(
     N: int,
     M: int,
     L: int,
+    diag_eps: float,
     pop_weight_uniformity: float,
     subj_weight_uniformity: float) -> GMMHyperparams:
     return GMMHyperparams(
         N, M, L,
+        diag_eps,
         pop_weight_uniformity,
         subj_weight_uniformity)
     
@@ -328,7 +349,7 @@ def sample_parameters(
     Q = jnp.zeros([hyperparams.L, hyperparams.M, hyperparams.M])
     q_diag = jnp.arange(hyperparams.M)
     Q = Q.at[:, q_diag, q_diag].set(q_sigma)
-    Q_chol = GMMParameters.cholesky_from_covariances(Q)
+    Q_chol = GMMParameters.cholesky_from_covariances(Q, diag_eps = hyperparams.diag_eps)
 
     return GMMTrainedParams.create(
         pop_weight_logits = pop_weight_logits,
@@ -367,10 +388,12 @@ def init_hyperparams(
     N: int,
     M: int,
     L: int,
+    diag_eps: float,
     pop_weight_uniformity: float,
     subj_weight_uniformity: float) -> GMMHyperparams:
     return GMMHyperparams(
         N, M, L,
+        diag_eps,
         pop_weight_uniformity,
         subj_weight_uniformity)
 
