@@ -4,23 +4,30 @@ import numpy as np
 
 from kpsn.util.keypt_io import keypt_parents
 
-def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}, label = None, labelon = 'line'):
+def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}, label = None, line2_kw = None, labelon = 'line', zorder = 0):
     
     for i, parent in enumerate(keypt_parents):
         if i == 0:
             continue
         curr_child = keypt_frame[i]
         curr_parent = keypt_frame[parent]
-        ax.plot((curr_child[xaxis], curr_parent[xaxis]),
-                (curr_child[yaxis], curr_parent[yaxis]),
-                **{'color':'black', **line_kw, **(
-                    {} if (labelon == 'scatter' or i != 1) else {'label': label}
-                )})
+
+        if line2_kw is not None:
+            kws = [line2_kw, line_kw]
+        else:
+            kws = [line_kw]
+        for kw in kws:
+            ax.plot((curr_child[xaxis], curr_parent[xaxis]),
+                    (curr_child[yaxis], curr_parent[yaxis]),
+                    **{'color':'black', **kw, **(
+                        {} if (labelon == 'scatter' or i != 1) else {'label': label}
+                    )},
+                    zorder = zorder)
         
     ax.scatter(keypt_frame[..., xaxis], keypt_frame[..., yaxis],
         **{'s': 3, **scatter_kw, **(
             {} if labelon == 'line' else {'label': label}
-        )})
+        )}, zorder = zorder + 1)
     
     ax.set_aspect(1.)
     

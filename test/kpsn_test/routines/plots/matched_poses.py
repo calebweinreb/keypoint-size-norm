@@ -18,9 +18,12 @@ def plot(
     meta = dataset['metadata']
 
     # --- find frames to plot
-    all_src_kpts = alignment.sagittal_align_insert_redundant_subspace(
-        dataset['keypts'][meta['session_slice'][cfg['ref_sess']]],
-        cfg['origin_keypt'], skeleton.default_armature)
+    if dataset['keypts'].shape[-1] < 42:
+        to_kpt = lambda arr: alignment.sagittal_align_insert_redundant_subspace(
+            arr, cfg['origin_keypt'], skeleton.default_armature)
+    else:
+        to_kpt = lambda arr: arr
+    all_src_kpts = to_kpt(dataset['keypts'][meta['session_slice'][cfg['ref_sess']]])
     frames = viz.diagram_plots.pose_gallery_ixs(
         all_src_kpts, skeleton.default_armature)
 
@@ -50,8 +53,7 @@ def plot(
                     meta['session_ix'][cfg['ref_sess']])
                 reconst = afm.transform(
                     curr_param, pose, meta['session_ix'][tgt_sess])
-                reconst_kpts = alignment.sagittal_align_insert_redundant_subspace(
-                    reconst, cfg['origin_keypt'], skeleton.default_armature)
+                reconst_kpts = to_kpt(reconst)
 
                 # --- plot results of trasnform
                 for row_ofs, xaxis, yaxis in [(0, 0, 1), (1, 0, 2)]:

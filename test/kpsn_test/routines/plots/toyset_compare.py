@@ -11,8 +11,11 @@ def plot_for_params(dataset, params, cfg):
     meta = dataset['metadata']
 
     # --- setup: find representative frames    
-    to_kpt = lambda arr: alignment.sagittal_align_insert_redundant_subspace(
-        arr, cfg['origin_keypt'], skeleton.default_armature)
+    if dataset['keypts'].shape[-1] < 42:
+        to_kpt = lambda arr: alignment.sagittal_align_insert_redundant_subspace(
+            arr, cfg['origin_keypt'], skeleton.default_armature)
+    else:
+        to_kpt = lambda arr: arr
 
     src_slc = meta['session_slice'][cfg['ref_sess']]
     src_all_kpts = to_kpt(dataset['keypts'][src_slc])

@@ -78,7 +78,7 @@ def _redundancy_mask(skel, origin_keypt):
 
     mask = np.ones([skel.n_kpts, 3], dtype = bool)
     # (x, z) of origin keypt locked to zero - remove
-    mask[skel.keypt_by_name[origin_keypt], :2] = 0
+    mask[skel.keypt_by_name[origin_keypt], :] = 0
     # (y,) of anterior keypt locked to zero - remove
     mask[skel.keypt_by_name[anterior_pt_name], 1] = 0
 

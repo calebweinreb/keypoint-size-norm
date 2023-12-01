@@ -479,7 +479,9 @@ def init(
         subj_weight_logits = jnp.log(init_counts),
         pop_weight_logits = jnp.log(init_counts[reference_subject]),
         means = init_mix.means_,
-        cholesky = extract_tril_cholesky(init_mix.covariances_)
+        cholesky = GMMParameters.cholesky_from_covariances(
+            init_mix.covariances_,
+            hyperparams.diag_eps)
     )
 
 

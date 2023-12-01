@@ -135,6 +135,13 @@ def construct_jitted_mstep(
                 grads)
         
         if update_blacklist is not None:
+            pt.tree_map_with_path(
+                lambda pth, grad: (
+                    print("Locking param:", logging._keystr(pth))
+                    if any(fnmatch(logging._keystr(pth), p)
+                           for p in update_blacklist)
+                    else None),
+                grads)
             grads = pt.tree_map_with_path(
                 lambda pth, grad: (
                     jnp.zeros_like(grad)

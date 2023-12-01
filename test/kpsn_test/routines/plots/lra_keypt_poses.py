@@ -15,8 +15,11 @@ def plot(
     ):
     
     meta = dataset['metadata']
-    all_keypts = alignment.sagittal_align_insert_redundant_subspace(
-        dataset['keypts'], cfg['origin_keypt'], skeleton.default_armature)
+    if dataset['keypts'].shape[-1] < 42:
+        all_keypts = alignment.sagittal_align_insert_redundant_subspace(
+            dataset['keypts'], cfg['origin_keypt'], skeleton.default_armature)
+    else:
+        all_keypts = dataset['keypts']
     params = init.morph
 
 

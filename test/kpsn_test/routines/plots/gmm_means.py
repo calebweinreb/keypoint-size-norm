@@ -22,9 +22,12 @@ def plot(
         for (curr_param, color, label, scatt_kw) in [
             (init.posespace, '.6', "init", {'s': 10}),
             (fit['fit_params'].posespace, 'k', 'fit', {'s': 0})]:
-
-            kpts = alignment.sagittal_align_insert_redundant_subspace(
-                curr_param.means[i_comp], cfg['origin_keypt'], skeleton.default_armature)
+            
+            if dataset['keypts'].shape[-1] < 42:
+                kpts = alignment.sagittal_align_insert_redundant_subspace(
+                    curr_param.means[i_comp], cfg['origin_keypt'], skeleton.default_armature)
+            else:
+                kpts = curr_param.means[i_comp]
             
             for row, xaxis, yaxis in [(0, 0, 1), (1, 0, 2)]:
             

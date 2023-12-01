@@ -75,15 +75,12 @@ def load_cfg(string):
                 elif kv.endswith('.json'):
                     with open(kv) as f:
                         nested_kvs = json.load(f)
-                    print("json:", nested_kvs)
                     nested_kvs = deepen_dict(nested_kvs)
                     ret = update(ret, nested_kvs, warn_not_present=False, add=True)
                 else:
-                    print("flat:", repr(kv), string)
                     deep_kv = deepen_dict({kv: True})
                     ret = update(ret, deep_kv, warn_not_present=False, add=True)
             else:
-                print("normal:", kv)
                 deep_kv = deepen_dict({kv[0]: try_eval(kv[1])})
                 ret = update(ret, deep_kv, warn_not_present=False, add=True)
         return ret
@@ -126,3 +123,35 @@ def update(default, new, warn_not_present = True, add = False):
         else:
             return new 
     return update_recurse(default, new, ())
+
+
+def sort_cfg_list(*args):
+    sorted_cfgs = {}
+    for cfg_str in args:
+        split_str = cfg_str.split('!')
+        if cfg_str.endswith('.json'):
+            cfg_value = split_str[-1]
+            with open(cfg_value) as f:
+                cfg_data = json.load(f)
+
+            if len(split_str) > 1:
+                cfg_for = cfg_for = split_str[0]
+            elif 'for' in cfg_data:
+                cfg_for = cfg_data['for']
+            else:
+                print(f"WARNING: Could not determine destination for config {cfg_str}")
+                continue
+        else:
+            if len(split_str) < 2:
+                print(f"WARNING: Could not determine destination for config {cfg_str}")
+                continue
+            cfg_for = split_str[0]
+            cfg_value = split_str[-1]
+
+        if cfg_for not in sorted_cfgs:
+            sorted_cfgs[cfg_for] = cfg_for
+        sorted_cfgs[cfg_for].append(cfg_data)
+    return sorted_cfgs
+        
+            
+                    

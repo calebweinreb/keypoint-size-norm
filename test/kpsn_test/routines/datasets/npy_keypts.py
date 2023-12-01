@@ -30,6 +30,12 @@ def generate(
         scale_result = align_result
         scales = np.ones(len(align_result))
 
+    if cfg['jitter'] is not None:
+        rng = np.random.RandomState(cfg['jitter_seed'])
+        scale_result = [arr + cfg['jitter'] * rng.randn(*arr.shape)
+                        for arr in scale_result]
+        print("jittered", cfg['jitter'])
+
     # convert from list of sessions to dictionary
     sess_names = [
         f'{metadata["age"][sess_ix]}wk_m{metadata["id"][sess_ix]}'
@@ -68,4 +74,6 @@ defaults = dict(
     rescale = True,
     output_indep = False,
     origin_keypt = 'hips',
+    jitter = None,
+    jitter_seed = 0,
 )

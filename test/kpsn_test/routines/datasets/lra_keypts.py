@@ -12,8 +12,13 @@ def generate(
     ):
 
     (N, M), gt_obs, metadata = npy_keypts.generate(
-        cfg = {**cfg, 'output_indep': True}
+        cfg = cfg
     )
+    # if not cfg['output_indep']:
+    #     feats = alignment.sagittal_align_insert_redundant_subspace(
+    #         gt_obs.keypts, cfg['origin_keypt'], skeleton.default_armature)
+    # else:
+    #     feats = gt_obs.keypts
 
     # ----- set up identical poses for each session
     src_keypts = gt_obs.keypts[metadata['session_slice'][cfg['src_sess']]]
@@ -40,9 +45,7 @@ def generate(
     params = morph_params.with_hyperparams(morph_hyperparams)
     all_feats = afm.transform(params, gt_all_poses, session_ids)
 
-    if not cfg['output_indep']:
-        all_feats = alignment.sagittal_align_insert_redundant_subspace(
-            all_feats, cfg['origin_keypt'], skeleton.default_armature)
+
 
     print("lrakp:", all_feats.shape)
     # ------ format new dataset and return
