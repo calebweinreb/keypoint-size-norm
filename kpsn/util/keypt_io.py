@@ -2,6 +2,10 @@ from bidict import bidict
 import joblib, os, glob
 import numpy as np
 
+modata_name_func = (lambda path, *a:
+    re.search(r"(?:/.*)+/\d{2}_\d{2}_\d{2}_(\d+wk_m\d+)\.gimbal_results\.p",
+              path).group(1))
+
 keypt_names_raw = np.array([
     'shldr',
     'back',
@@ -73,7 +77,7 @@ def from_raw_array(raw_arr):
 
 
 
-def npy_dataset(dirname, whitelist = None):
+def npy_dataset(dirname, whitelist = None, name_func = modata_name_func):
     """
     Load a set of .npy keypoint data.
 
@@ -97,6 +101,7 @@ def npy_dataset(dirname, whitelist = None):
     keypts: List[array(t, keypt, dim)]
         Keypoint data.
     """
+    glob_files = sorted(glob.glob(f'{dirname}/*.npy'))
     if whitelist is not None:
         if isinstance(whitelist, str):
             with open(whitelist, 'r') as f:
@@ -106,10 +111,10 @@ def npy_dataset(dirname, whitelist = None):
         else:
             files = [
                 os.path.normpath(os.path.join(dirname, f.strip()))
-                for f in whitelist
+                for f in glob_files if name_func(f.strip()) in whitelist
             ]
     else:
-        files = sorted(glob.glob(f'{dirname}/*.npy'))
+        files = glob_files
     
     meta, keypts = npy_file_dataset(files)
     meta['file'] = files
