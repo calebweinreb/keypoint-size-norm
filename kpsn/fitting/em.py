@@ -206,7 +206,6 @@ def _mstep(
     optimizer: optax.GradientTransformation,
     opt_state,
     n_steps: int,
-    reinit_opt = True,
     batch_size: int = None,
     batch_seed = 29,
     log_every: int = -1,
@@ -238,8 +237,6 @@ def _mstep(
     # ----- Set up variables for iteration
 
     curr_params = init_params
-    if reinit_opt:
-        opt_state = optimizer.init(init_params)
     loss_hist = np.full([n_steps], np.nan)
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
     hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
@@ -387,6 +384,8 @@ def iterate_em(
             step_obs = emissions
             step_aux = aux_pdf
 
+        if mstep_reinit_opt:
+            opt_state = optimizer.init(curr_params)
         opt_state.hyperparams['learning_rate'] = lr_sched(step_i)
         loss_hist_mstep, fit_params_mstep, mstep_end_objective, mstep_param_trace, opt_state = _mstep(
             model = model,
@@ -397,7 +396,6 @@ def iterate_em(
             optimizer = optimizer,
             opt_state = opt_state,
             n_steps = mstep_n_steps,
-            reinit_opt = mstep_reinit_opt,
             batch_size = mstep_batch_size,
             batch_seed = mstep_batch_seed + step_i,
             log_every = mstep_log_every,
