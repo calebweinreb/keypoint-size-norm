@@ -130,10 +130,10 @@ class GMMParameters(NamedTuple):
         return extract_tril_cholesky(covariances) 
 
     def weights(self) -> Float[Array, "N L"]:
-        return jnn.softmax(self.logits(), axis = 1)
+        return jnn.softmax(self.logits(), axis = -1)
     
     def pop_weights(self) -> Float[Array, "L"]:
-        return jnn.softmax(self.pop_logits())
+        return jnn.softmax(self.pop_logits(), axis = -1)
     
     def logits(self) -> Float[Array, "N L"]:
         return GMMParameters.normalize_logits(self.trained_params.subj_weight_logits)
@@ -142,14 +142,14 @@ class GMMParameters(NamedTuple):
     
     @staticmethod
     def normalize_logits(logits):
-        centered = logits - logits.mean(axis = 1)[:, None]
+        centered = logits - logits.mean(axis = -1)[..., None]
         saturated = GMMTrainedParams.LOGIT_MAX * jnp.tanh(
             centered / GMMTrainedParams.LOGIT_MAX)
         return saturated
     
     @staticmethod
     def normalize_pop_logits(pop_logits):
-        centered = pop_logits - pop_logits.mean()
+        centered = pop_logits - pop_logits.mean(axis = -1)[..., None]
         saturated = GMMTrainedParams.LOGIT_MAX * jnp.tanh(
             centered / GMMTrainedParams.LOGIT_MAX)
         return saturated
@@ -408,6 +408,7 @@ def init(
     fit_to_all_subj: bool = False,
     subsample: float = False,
     cov_eigenvalue_eps = 1e-3,
+    uniform = False
     ) -> Tuple[GMMTrainedParams]:
     """
     Initialize a GMMPoseSpaceModel based on observed keypoint data.
@@ -429,6 +430,8 @@ def init(
             are represented as logits (logarithms) which cannot capture zero
             counts, so instances of zero counts are replaced with `count_eps` to
             indicate a very small cluster weight.
+        uniform: bool
+            Do not initialize cluster weights
     Returns:
         init_params: GMMHyperparams
             Initial parameters for a `GMMPoseSpaceModel`
@@ -454,15 +457,18 @@ def init(
     init_mix = init_mix.fit(init_pts)
 
     # get component labels & counts across all subjects
-    init_components = observations.unstack(
-        init_mix.predict(poses)) # List<subj>[(T,)]
-    init_counts = np.zeros([hyperparams.N, hyperparams.L])
-    for i_subj in range(hyperparams.N):
-        uniq, count = np.unique(
-            init_components[i_subj],
-            return_counts = True)
-        init_counts[i_subj][uniq] = count
-    init_counts[init_counts == 0] = count_eps
+    if not uniform:
+        init_components = observations.unstack(
+            init_mix.predict(poses)) # List<subj>[(T,)]
+        init_counts = np.zeros([hyperparams.N, hyperparams.L])
+        for i_subj in range(hyperparams.N):
+            uniq, count = np.unique(
+                init_components[i_subj],
+                return_counts = True)
+            init_counts[i_subj][uniq] = count
+        init_counts[init_counts == 0] = count_eps
+    else:
+        init_counts = np.ones([hyperparams.N, hyperparams.L])
 
     # Correct any negative eigenvalues
     # In the case of a non positive semidefinite covariance output by
@@ -478,9 +484,9 @@ def init(
     return GMMTrainedParams(
         subj_weight_logits = jnp.log(init_counts),
         pop_weight_logits = jnp.log(init_counts[reference_subject]),
-        means = init_mix.means_,
+        means = jnp.array(init_mix.means_),
         cholesky = GMMParameters.cholesky_from_covariances(
-            init_mix.covariances_,
+            jnp.array(init_mix.covariances_),
             hyperparams.diag_eps)
     )
 

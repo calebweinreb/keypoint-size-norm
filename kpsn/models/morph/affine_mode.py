@@ -332,18 +332,21 @@ def init(
     hyperparams: AFMHyperparams,
     observations: Observations,
     reference_subject: int,
-    seed: int = 0
+    seed: int = 0,
+    init_offsets = True
     ) -> AFMTrainedParameters:
     
     # Calculate offsets
-    subjwise_keypts = observations.unstack(observations.keypts)
-    offset_updates = jnp.stack([
-        subj_kpts.mean(axis = 0) - hyperparams.offset
-        for subj_kpts in subjwise_keypts])
+    if init_offsets:
+        subjwise_keypts = observations.unstack(observations.keypts)
+        offset_updates = jnp.stack([
+            subj_kpts.mean(axis = 0) - hyperparams.offset
+            for subj_kpts in subjwise_keypts])
 
     return AFMTrainedParameters.create(
         hyperparams = hyperparams,
-        offset_updates = offset_updates,
+        offset_updates = (offset_updates if init_offsets
+                          else jnp.zeros([hyperparams.N, hyperparams.M])),
         mode_updates = jnp.zeros([hyperparams.N, hyperparams.M, hyperparams.L]),
     )
 

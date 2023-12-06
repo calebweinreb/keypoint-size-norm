@@ -16,7 +16,7 @@ def plot(
     hyperparams = init.posespace.hyperparams
     fig, ax = plt.subplots(
         hyperparams.L, 2, figsize = (3 * 2, 2 * hyperparams.L),
-        sharex = 'row')
+        sharex = True, sharey = True)
 
     for i_comp in range(hyperparams.L):
         for (curr_param, color, label, scatt_kw) in [

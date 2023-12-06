@@ -40,6 +40,9 @@ def plot(
                         np.array([1., 1., 1.]) * ltn)
                 ax[i_comp, i_param].axhline(
                     pop_weights[i_comp], color = '.5', lw = 1)
+            
+            ax[i_comp, 0].set_ylim(0, 1.05)
+            ax[i_comp, 1].set_ylim(0, 1.05)
                 
             prob_lab = "P(component)\n" if i_comp == 0 else ""
             ax[i_comp, 0].set_ylabel(f"{prob_lab}Component {i_comp}")

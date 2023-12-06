@@ -1,10 +1,13 @@
+import joblib, os, glob, re
 from bidict import bidict
-import joblib, os, glob
 import numpy as np
 
-modata_name_func = (lambda path, *a:
-    re.search(r"(?:/.*)+/\d{2}_\d{2}_\d{2}_(\d+wk_m\d+)\.gimbal_results\.p",
-              path).group(1))
+def modata_name_func(path):
+    m = re.search(r"(?:/.*)+/\d{2}_\d{2}_\d{2}_(\d+wk_m\d+)\.npy",
+              path)
+    if m is None:
+        raise ValueError(f"using modata_name_func on {path}")
+    return m.group(1)
 
 keypt_names_raw = np.array([
     'shldr',

@@ -60,6 +60,8 @@ def load_cfg(string):
     elif string.endswith('.json'):
         with open(string) as f:
             return json.load(f)
+    elif isinstance(string, dict):
+        return deepen_dict(string)
     else:
         def try_eval(s):
             try: return eval(s)
@@ -84,6 +86,16 @@ def load_cfg(string):
                 deep_kv = deepen_dict({kv[0]: try_eval(kv[1])})
                 ret = update(ret, deep_kv, warn_not_present=False, add=True)
         return ret
+    
+
+def load_cfg_list(cfgs):
+    ret = {}
+    for cfg in cfgs:
+        ret = update(ret, cfg, warn_not_present=False, add=True)
+    return ret
+
+def load_cfg_lists(cfg_dict):
+    return {k: load_cfg_list(v) for k, v in cfg_dict.items()}
 
 
 def deepen_dict(d):
@@ -125,32 +137,43 @@ def update(default, new, warn_not_present = True, add = False):
     return update_recurse(default, new, ())
 
 
-def sort_cfg_list(*args):
-    sorted_cfgs = {}
+def sort_cfg_list(args, shorthands = {}, base = None):
+    """
+    In: "d#key=value:key1=value1" "kevals.json"
+    kevals.json = {d: {key2: value2}}
+    Out: dict(d = ["key=value:key1=value1", {key2: value2}])
+    
+    Or if shorthands = dict(d = data) with keyvals.json still {d: ...}
+    In: "data#key=value:key1=value1" "kevals.json"
+    Out: dict(data = ["key=value:key1=value1", {key2: value2}])
+    """
+    sorted_pairs = []
     for cfg_str in args:
-        split_str = cfg_str.split('!')
         if cfg_str.endswith('.json'):
-            cfg_value = split_str[-1]
-            with open(cfg_value) as f:
+            with open(cfg_str) as f:
                 cfg_data = json.load(f)
-
-            if len(split_str) > 1:
-                cfg_for = cfg_for = split_str[0]
-            elif 'for' in cfg_data:
-                cfg_for = cfg_data['for']
-            else:
-                print(f"WARNING: Could not determine destination for config {cfg_str}")
-                continue
+                for cfg_for, cfg_value in cfg_data:
+                    if cfg_for in shorthands:
+                        cfg_for = shorthands[cfg_for]
+                    sorted_pairs.append((cfg_for, cfg_value))
         else:
+            split_str = cfg_str.split('#')
             if len(split_str) < 2:
                 print(f"WARNING: Could not determine destination for config {cfg_str}")
                 continue
             cfg_for = split_str[0]
+            if cfg_for in shorthands:
+                cfg_for = shorthands[cfg_for]
             cfg_value = split_str[-1]
 
+    if base is None: sorted_cfgs = {}
+    else: sorted_cfgs = base
+
+    for cfg_for, cfg_value in sorted_pairs:
         if cfg_for not in sorted_cfgs:
-            sorted_cfgs[cfg_for] = cfg_for
+            sorted_cfgs[cfg_for] = []
         sorted_cfgs[cfg_for].append(cfg_data)
+    
     return sorted_cfgs
         
             

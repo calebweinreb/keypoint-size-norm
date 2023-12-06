@@ -10,6 +10,7 @@ defaults = dict(
         subj_weight_uniformity = 100,
     ),
     init = dict(
+        uniform = False,
         fit_to_all_subj = False
     )
 )

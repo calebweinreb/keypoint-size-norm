@@ -39,7 +39,12 @@ def plot_for_params(dataset, params, cfg):
             tgt_slc = meta['session_slice'][tgt_sess]
             
             src_kpts = src_all_kpts[frame]
-            tgt_kpts = to_kpt(dataset['keypts'][tgt_slc][frame]) 
+            if cfg['match_mode'] == 'frame':
+                tgt_kpts = to_kpt(dataset['keypts'][tgt_slc][frame]) 
+            elif cfg['match_mode'] == 'same':
+                tgt_kpts = src_kpts
+            else:
+                raise ValueError(f"match mode must be [frame, same]. got {cfg['match_mode']}")
 
             # --- morph from reference subject to target
             pose = afm.inverse_transform(
@@ -62,14 +67,16 @@ def plot_for_params(dataset, params, cfg):
                     scatter_kw = {'color': '.6'},
                     line_kw = {'color': '.6'},
                     label = cfg['ref_sess'])
+                
                 # ground truth target
-                viz.diagram_plots.plot_mouse(
-                    curr_ax,
-                    tgt_kpts.reshape(kpt_shape),
-                    xaxis, yaxis,
-                    scatter_kw = {'color': 'k', 's': 6},
-                    line_kw = {'color': 'k', 'lw': 1},
-                    label = f'{tgt_sess}, datset')
+                if cfg['match_mode'] != 'same':
+                    viz.diagram_plots.plot_mouse(
+                        curr_ax,
+                        tgt_kpts.reshape(kpt_shape),
+                        xaxis, yaxis,
+                        scatter_kw = {'color': 'k', 's': 6},
+                        line_kw = {'color': 'k', 'lw': 1},
+                        label = f'{tgt_sess}, datset')
                 # morphed target
                 viz.diagram_plots.plot_mouse(
                     curr_ax,
@@ -105,5 +112,8 @@ def plot(
 defaults = dict(
     ref_sess = 'subj0',
     colorby = 'body',
-    origin_keypt = 'hips'
+    origin_keypt = 'hips',
+    match_mode = 'frame',
+        # frame: assume frames correspond across videos
+        # same: use keypoints from the reference session
 )   

@@ -7,7 +7,7 @@ def generate(
     cfg: dict,
     ):
 
-    metadata, keypts = keypt_io.npy_dataset(cfg['path'])
+    metadata, keypts = keypt_io.npy_dataset(cfg['path'], whitelist = cfg['whitelist'])
     if len(keypts) == 0:
         print(f"Warning: no keypoints found at {cfg['path']}")
 
@@ -76,4 +76,5 @@ defaults = dict(
     origin_keypt = 'hips',
     jitter = None,
     jitter_seed = 0,
+    whitelist = None
 )

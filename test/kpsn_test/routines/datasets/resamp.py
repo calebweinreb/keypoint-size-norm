@@ -12,34 +12,26 @@ def generate(
     cfg: dict,
     ):
 
+    # ------ load source sesssio and resample
     (N, M), gt_obs, metadata = npy_keypts.generate(
-        cfg = {**cfg, 'whitelist': [cfg['src_sess']]})
+        cfg = {**cfg, 'whitelist': [cfg['src_sess']]})\
 
-    # ----- create clusters
-    clusters = clustering.train_clusters(
-        cfg['n_clust'],
-        keypt_io.to_feats(gt_obs.keypts),
-        seed = cfg['clust_seed'])
-
-    # ------ measure counts and resample
-    labels, counts, logits = clustering.masks_and_logits(
-        clusters.labels_, cfg['n_clust'])
-    samp_keypts, samp_counts, samp_logits = clustering.max_resamp(
-        gt_obs.keypts, labels, logits,
-        temperature = cfg['temperature'],
-        seed = cfg['samp_seed'])
+    resamp = clustering.cluster_and_resample(
+        gt_obs.keypts, cfg['n_clust'], clustering.methods[cfg['type']],
+        cfg['temperature'], cfg['clust_seed'], cfg['samp_seed'])
 
     # ------ create matching metadata
-    slices, all_keypts = keypt_io.to_flat_array(samp_keypts)
+    slices, all_keypts = keypt_io.to_flat_array(resamp['resampled'])
     id_by_name, session_ids = keypt_io.ids_from_slices(all_keypts, slices)
 
     new_metadata = dict(
         session_ix = id_by_name,
         session_slice = slices,
         bhv = {f'm{i}': i for i in range(cfg['n_clust'])},
-        bhv_counts = samp_counts,
+        bhv_counts = resamp['counts'],
         src_sess = {sess: cfg['src_sess'] for sess in slices},
-        shared = dict(clusters = clusters.cluster_centers_),
+        shared = dict(clusters = resamp['clusters'].cluster_centers_,
+                      kmeans = resamp['clusters']),
         **{k: {sess: v[cfg['src_sess']] for sess in slices}
             for k, v in metadata.items()
             if k not in ['session_ix', 'session_slice']},
@@ -58,6 +50,7 @@ defaults = dict(
     temperature = 0.5,
     clust_seed = 2,
     samp_seed = 2,
-    **{k: v for k, v in npy_keypts.defaults
+    type = 'max',
+    **{k: v for k, v in npy_keypts.defaults.items()
        if k not in ['whitelist']},
 )

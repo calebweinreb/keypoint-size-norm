@@ -7,6 +7,7 @@ import jax.random as jr
 import jax.numpy as jnp
 import jax.nn as jnn
 import numpy as np
+import functools
 import optax
 import tqdm
 import jax
@@ -15,6 +16,8 @@ from ..models import pose
 from ..models import joint_model
 from ..util import logging
 from ..util import computations
+
+from kpsn_test.routines.util import load_routine
 
 
 def _pytree_sum(tree):
@@ -82,6 +85,11 @@ def _mstep_objective(
     
     morph_prior = model.morph.log_prior(params.morph)
     posespace_prior = model.posespace.log_prior(params.posespace)
+
+    aux_entropy = -jnp.where(aux_pdf > 1e-12,
+        aux_pdf * jnp.log(aux_pdf),
+        0).sum()
+    elbo = dataset_prob + aux_entropy
     
     # return morph_prior
     return {
@@ -89,12 +97,15 @@ def _mstep_objective(
             'dataset': dataset_prob,
             'morph': morph_prior,
             'pose': posespace_prior},
-        'aux': {'logjac': jacobian_logdets.mean()}
+        'aux': {
+            'logjac': jacobian_logdets.mean(),
+            'elbo': elbo}
     }
 
 
 def _mstep_loss(
     model: joint_model.JointModel,
+    use_priors: bool = True
     ) -> Scalar:
     def step_loss_(
         params: optax.Params, 
@@ -104,19 +115,36 @@ def _mstep_loss(
         ):
         scalars = _mstep_objective(
             model, emissions, params, hyperparams, aux_pdf)
-        loss = -_pytree_sum(scalars['objectives'])
+        if use_priors:
+            loss = -_pytree_sum(scalars['objectives'])
+        else:
+            print("Ignored priors.")
+            loss = -scalars['objectives']['dataset']
         objectives = {**scalars["objectives"], **scalars['aux']}
         return loss, objectives
     return step_loss_
+
+
+    
+def lr_const(step_i, lr, n_samp, **kw):
+    return (lr/n_samp)
+    
+def lr_exp(step_i, n_samp, lr, hl, min = 0, **kw):
+    return (lr/n_samp) * 2 ** (-step_i / hl) + min/n_samp
+        
+rates = dict(
+    const = lr_const,
+    exp = lr_exp)
 
 
 def construct_jitted_mstep(
     model: joint_model.JointModel,
     optimizer: optax.GradientTransformation,
     update_max: float,
-    update_blacklist: list = None):
+    update_blacklist: list = None,
+    use_priors: bool = True):
 
-    loss_func = _mstep_loss(model)
+    loss_func = _mstep_loss(model, use_priors)
 
     @partial(jax.jit, static_argnums = (3,))
     def step(opt_state, params, emissions,
@@ -176,7 +204,9 @@ def _mstep(
     emissions: pose.Observations,
     hyperparams: joint_model.JointHyperparams,
     optimizer: optax.GradientTransformation,
+    opt_state,
     n_steps: int,
+    reinit_opt = True,
     batch_size: int = None,
     batch_seed = 29,
     log_every: int = -1,
@@ -185,6 +215,7 @@ def _mstep(
     stop_window: int = 10,
     update_max = None,
     update_blacklist = None,
+    use_priors = True,
     jitted_step = None
     ) -> Tuple[Float[Array, "n_steps"], joint_model.JointParameters]:
     """
@@ -202,12 +233,13 @@ def _mstep(
     if step is None:
         step = construct_jitted_mstep(
             model, optimizer,
-            update_max, update_blacklist)
+            update_max, update_blacklist, use_priors)
 
     # ----- Set up variables for iteration
 
     curr_params = init_params
-    opt_state = optimizer.init(init_params)
+    if reinit_opt:
+        opt_state = optimizer.init(init_params)
     loss_hist = np.full([n_steps], np.nan)
     iter = range(n_steps) if not progress else tqdm.trange(n_steps)
     hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
@@ -253,7 +285,7 @@ def _mstep(
             loss_hist = loss_hist[:step_i+1]
             break
 
-    return loss_hist, curr_params, objectives, param_trace
+    return loss_hist, curr_params, objectives, param_trace, opt_state
 
 
 def iterate_em(
@@ -268,9 +300,11 @@ def iterate_em(
     batch_size: int = None,
     batch_seed: int = 23,
     update_blacklist = None,
-    learning_rate: float = 5e-3,
+    use_priors = True,
+    learning_rate: float = dict(kind='const', lr=5e-3),
     scale_lr: bool = False,
     full_dataset_objectives = True,
+    mstep_reinit_opt = True,
     mstep_n_steps: int = 2000,
     mstep_log_every: int = -1,
     mstep_progress = False,
@@ -306,18 +340,24 @@ def iterate_em(
     elif return_param_hist == 'mstep':
         param_trace = logging.ReportTrace(n_steps)
     
+    if isinstance(learning_rate, int) or isinstance(learning_rate, float):
+        learning_rate = dict(kind = 'const', lr = learning_rate)
 
     if scale_lr:
         if mstep_batch_size is not None: step_data_size = mstep_batch_size
         elif batch_size is not None: step_data_size = batch_size
         else: step_data_size = emissions.keypts.shape[0]
-        print("Adjusting learning rate:", 
-              f"{learning_rate} -> {learning_rate / step_data_size}")
-        learning_rate /= step_data_size
+        print("Adjusting learning rate:",
+            f"{learning_rate['lr']} -> {learning_rate['lr'] / step_data_size}")
+    print(f"Loading schedule: {learning_rate['kind']}")
 
-    optimizer = optax.adam(learning_rate = learning_rate)
+    lr_sched = functools.partial(rates[learning_rate['kind']],
+        n_steps = n_steps, n_samp = step_data_size, **learning_rate)
+
+    optimizer = optax.inject_hyperparams(optax.adam)(learning_rate=learning_rate['lr'])
+    opt_state = optimizer.init(curr_params)
     jitted_mstep = construct_jitted_mstep(model, optimizer,
-        mstep_update_max, update_blacklist)
+        mstep_update_max, update_blacklist, use_priors)
     jitted_estep = construct_jitted_estep(model)
     hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
 
@@ -347,14 +387,17 @@ def iterate_em(
             step_obs = emissions
             step_aux = aux_pdf
 
-        loss_hist_mstep, fit_params_mstep, mstep_end_objective, mstep_param_trace = _mstep(
+        opt_state.hyperparams['learning_rate'] = lr_sched(step_i)
+        loss_hist_mstep, fit_params_mstep, mstep_end_objective, mstep_param_trace, opt_state = _mstep(
             model = model,
             init_params = curr_params,
             aux_pdf = step_aux,
             emissions = step_obs,
             hyperparams = hyperparams,
             optimizer = optimizer,
+            opt_state = opt_state,
             n_steps = mstep_n_steps,
+            reinit_opt = mstep_reinit_opt,
             batch_size = mstep_batch_size,
             batch_seed = mstep_batch_seed + step_i,
             log_every = mstep_log_every,
@@ -391,6 +434,7 @@ def iterate_em(
                 )['objectives']['dataset']
             report_trace.record(dict(
                 logprobs = mstep_end_objective,
+                lr = jnp.array(lr_sched(step_i)),
                 **aux_reports),
                 step_i)
         

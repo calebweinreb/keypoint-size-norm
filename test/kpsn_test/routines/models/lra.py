@@ -13,7 +13,7 @@ defaults = dict(
         upd_var_ofs = 1,
         identity_sess = None,
     ),
-    init = dict()
+    init = dict(init_offsets = True)
 )
 
 def session_names_to_ixs(metadata, cfg):

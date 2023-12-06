@@ -7,7 +7,7 @@ import jax.random as jr
 from kpsn.util.keypt_io import apply_across_flat_array
 
 
-def train_clusters(n_clusters, features, seed = None, whiten = True):
+def train_clusters(n_clusters, features, seed = None):
     """
     features: (n_samp, n_feat)
     seed: int, RandomState or None
@@ -18,6 +18,15 @@ def train_clusters(n_clusters, features, seed = None, whiten = True):
         n_clusters, n_init = 'auto',
         random_state = seed)
     return clusters.fit(features)
+
+
+def apply_clusters(centers, features, seed = None):
+    clusters = sklearn.cluster.KMeans(
+        centers.shape[0],
+        n_init = 1,
+        random_state = seed,)
+    clusters.cluster_centers_ = centers
+    return clusters.transform(features).argmin(axis = 1)
 
 
 def masks_and_logits(all_labels, N):
@@ -38,7 +47,7 @@ def masks_and_logits(all_labels, N):
     return label_ixs, counts, logits
 
 
-def max_resamp(arr, group_ixs, logits, temperature, seed = 0):
+def logit_resamp(logit_func, arr, group_ixs, logits, seed = 0):
     """
     Generate new arrays resampled such that each group is predominant in one
     session.
@@ -64,15 +73,58 @@ def max_resamp(arr, group_ixs, logits, temperature, seed = 0):
 
     for i in range(L):
         new_logits = logits.copy()
-        new_logits[i] = logits.max() + temperature
+        new_logits[i] = logit_func(i, logits)
         new_counts = (np.exp(new_logits) / np.exp(new_logits).sum() * len(arr)
                       ).astype('int')
-        rngk, rngk_use = jr.split(rngk, 2)
-        samp_data[f'm{i}'] = np.concatenate([
-            jr.choice(rngk_use, arr[group_ixs[i]], (new_counts[c],), replace = True)
+        rngk_use = jr.split(rngk, L + 1)
+        rngk = rngk_use[-1]
+        samps = [
+            jr.choice(rngk_use[L], arr[group_ixs[c]], (new_counts[c],), replace = True)
             for c in range(L)
-        ])
+        ]
+        samp_data[f'm{i}'] = np.concatenate(samps)
         samp_counts[f'm{i}'] = new_counts
         samp_logits[f'm{i}'] = new_logits
 
     return samp_data, samp_counts, samp_logits
+
+
+def max_resamp(arr, group_ixs, logits, temperature, seed = 0):
+    return logit_resamp(
+        lambda i, l: l.max() + temperature,
+        arr, group_ixs, logits, seed)
+
+
+def boost_resamp(arr, group_ixs, logits, temperature, seed = 0):
+    return logit_resamp(
+        lambda i, l: l[i] + temperature,
+        arr, group_ixs, logits, seed)
+
+
+methods = {'max': max_resamp, 'boost': boost_resamp}
+
+
+def cluster_and_resample(
+    arr, n_clusters, method, temperature,
+    cluster_seed = 0, sample_seed = 43):
+
+    # ----- create clusters
+    clusters = train_clusters(
+        n_clusters, arr, seed = cluster_seed)
+
+    # ------ measure counts and resample
+    labels, counts, logits = masks_and_logits(
+        clusters.labels_, n_clusters)
+    samp_keypts, samp_counts, samp_logits = method(
+        arr, labels, logits,
+        temperature = temperature,
+        seed = sample_seed)
+    
+    return dict(
+        clusters = clusters,
+        labels = labels,
+        orig_counts = counts,
+        resampled = samp_keypts,
+        counts = samp_counts
+    )
+

@@ -45,9 +45,6 @@ def generate(
     params = morph_params.with_hyperparams(morph_hyperparams)
     all_feats = afm.transform(params, gt_all_poses, session_ids)
 
-
-
-    print("lrakp:", all_feats.shape)
     # ------ format new dataset and return
     new_obs = pose.Observations(all_feats, session_ids)
 
