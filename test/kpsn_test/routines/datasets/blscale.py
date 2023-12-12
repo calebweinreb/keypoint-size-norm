@@ -22,6 +22,8 @@ def generate(
 
     slices = metadata['session_slice']
     ages, age_groups = keypt_io.get_groups_dict(metadata['age'])
+    if cfg['tgt_ages'] is None: tgt_ages = ages
+    else: tgt_ages = cfg['tgt_ages']
 
     # ----- transform to bone space and measure lengths
     all_roots, all_bones = ls.transform(
@@ -45,7 +47,7 @@ def generate(
     remap_meta = {f'src-{k}': {src_sess: metadata[k][src_sess]} for k in metadata}
     remap_meta['tgt_age'] = {src_sess: src_age}
     
-    for tgt_age in ages:
+    for tgt_age in tgt_ages:
         if tgt_age == src_age: pass
 
         new_sess = f'{tgt_age}wk_m{metadata["id"][src_sess]}'
@@ -102,5 +104,7 @@ def generate(
 defaults = dict(
     src_sess = None,
     reroot = 'hips',
-    **npy_keypts.defaults
+    tgt_ages = None,
+    **npy_keypts.defaults,
+    resamp = dict(kind=None, temp=0.3)
 )

@@ -1,7 +1,7 @@
 
 from kpsn.models import pose
 from kpsn.models.morph import affine_mode as afm
-from kpsn.util import keypt_io
+from kpsn.util import keypt_io, alignment
 import kpsn_test.visualize as viz
 
 import matplotlib.pyplot as plt
@@ -16,8 +16,9 @@ def plot(
     ):
     
     morph_model = afm.AffineModeMorph
-    gt_obs = pose.Observations(dataset['keypts'], dataset['subject_ids'])
+    # gt_obs = pose.Observations(dataset['keypts'], dataset['subject_ids'])
     metadata = dataset['metadata']
+    to_kpt, _ = alignment.gen_kpt_func(dataset['keypts'], cfg['origin_keypt'])
 
     group_keys, groups = keypt_io.get_groups_dict(metadata[cfg['groupby']])
     plot_subset = [group[0] for group in groups]
@@ -40,6 +41,7 @@ def plot(
             metadata[cfg['groupby']], None,
             metadata['session_ix'],
             0, 1, plot_subset, age_pal,
+            keypt_conv = to_kpt,
             ax = ax[0::2])
 
         viz.affine_mode.mode_body_diagrams(
@@ -47,6 +49,7 @@ def plot(
             metadata[cfg['groupby']], None,
             metadata['session_ix'],
             0, 2, plot_subset, age_pal,
+            keypt_conv = to_kpt,
             ax = ax[1::2], titles = False, label_suff = None)
 
         fig.suptitle(ttl)
@@ -60,5 +63,6 @@ def plot(
 
 
 defaults = dict(
-    groupby = 'age'
+    groupby = 'age',
+    origin_keypt = 'hips'
 )

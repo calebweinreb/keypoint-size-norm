@@ -107,8 +107,8 @@ class GMMParameters(NamedTuple):
     means = property(lambda self: self.trained_params.means)
     cholesky = property(lambda self: self.trained_params.cholesky)
     
-    def covariances(self) -> Float32[Array, "L M M"]:
-        covs = expand_tril_cholesky(self.cholesky, n = self.M)
+    def covariances(self, log = False) -> Float32[Array, "L M M"]:
+        covs = expand_tril_cholesky(self.cholesky, n = self.M, log = log)
         # addition of diagonal before extracting cholesky
         if self.diag_eps is not None:
             diag_ixs = jnp.diag_indices(self.M)
@@ -475,12 +475,16 @@ def init(
     # the GMM fit (happens in moderate dimensionality), snap to the
     # nearest (in Frobenius norm) symmetric matrix with eigenvalues
     # not less than `cov_eigenvalue_eps`
+    if (hyperparams.diag_eps is not None and
+            cov_eigenvalue_eps < hyperparams.diag_eps):
+        cov_eigenvalue_eps = hyperparams.diag_eps
     cov_vals, cov_vecs = jnp.linalg.eigh(init_mix.covariances_)
     if jnp.any(cov_vals < 0):
         clipped_vals = jnp.clip(cov_vals, cov_eigenvalue_eps)
         init_mix.covariances_ = (
             (cov_vecs[1] * clipped_vals[..., None, :]) @
             jnp.swapaxes(cov_vecs[1], -2, -1))
+        
     return GMMTrainedParams(
         subj_weight_logits = jnp.log(init_counts),
         pop_weight_logits = jnp.log(init_counts[reference_subject]),
@@ -512,21 +516,27 @@ def log_prior(
     params: GMMParameters,
     ):
     # Heirarchical dirichlet prior on component weights
-    pop_weights = params.pop_weights()
-    pop_logpdf = tfp.distributions.Dirichlet(
-        jnp.ones([params.L]) *
-            params.pop_weight_uniformity /
-            params.L,
-    ).log_prob(pop_weights)
-    subj_logpdf = tfp.distributions.Dirichlet( 
-        params.subj_weight_uniformity *
-        pop_weights
-    ).log_prob(params.weights())
+    if params.L > 1:
+        pop_weights = params.pop_weights()
+        pop_logpdf = tfp.distributions.Dirichlet(
+            jnp.ones([params.L]) *
+                params.pop_weight_uniformity /
+                params.L,
+        ).log_prob(pop_weights)
+        subj_logpdf = tfp.distributions.Dirichlet( 
+            params.subj_weight_uniformity *
+            pop_weights
+        ).log_prob(params.weights())
 
-    return dict(
-        pop_weight  = pop_logpdf,
-        subj_weight = subj_logpdf,
-    )
+        return dict(
+            pop_weight  = pop_logpdf,
+            subj_weight = subj_logpdf,
+        )
+    else:
+        return dict(
+            pop_weight  = jnp.array(0),
+            subj_weight = jnp.array(0),
+        )
     
 
 def reports(

@@ -69,6 +69,7 @@ def logit_resamp(logit_func, arr, group_ixs, logits, seed = 0):
     samp_data = {}
     samp_counts = {}
     samp_logits = {}
+    samp_frames = {}
     rngk = jr.PRNGKey(seed)
 
     for i in range(L):
@@ -78,15 +79,16 @@ def logit_resamp(logit_func, arr, group_ixs, logits, seed = 0):
                       ).astype('int')
         rngk_use = jr.split(rngk, L + 1)
         rngk = rngk_use[-1]
-        samps = [
-            jr.choice(rngk_use[L], arr[group_ixs[c]], (new_counts[c],), replace = True)
+        samps = np.concatenate([
+            jr.choice(rngk_use[L], group_ixs[c], (new_counts[c],), replace = True)
             for c in range(L)
-        ]
-        samp_data[f'm{i}'] = np.concatenate(samps)
+        ])
+        samp_data[f'm{i}'] = arr[samps]
+        samp_frames[f'm{i}'] = samps
         samp_counts[f'm{i}'] = new_counts
         samp_logits[f'm{i}'] = new_logits
 
-    return samp_data, samp_counts, samp_logits
+    return samp_data, samp_frames, samp_counts, samp_logits
 
 
 def max_resamp(arr, group_ixs, logits, temperature, seed = 0):
@@ -115,7 +117,7 @@ def cluster_and_resample(
     # ------ measure counts and resample
     labels, counts, logits = masks_and_logits(
         clusters.labels_, n_clusters)
-    samp_keypts, samp_counts, samp_logits = method(
+    samp_keypts, samp_frames, samp_counts, samp_logits = method(
         arr, labels, logits,
         temperature = temperature,
         seed = sample_seed)
@@ -123,6 +125,7 @@ def cluster_and_resample(
     return dict(
         clusters = clusters,
         labels = labels,
+        sampled_frames = samp_frames,
         orig_counts = counts,
         resampled = samp_keypts,
         counts = samp_counts

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from kpsn.models.morph import affine_mode as afm
+from kpsn.util import alignment
 
 from .diagram_plots import plot_mouse
 from . import defaults
@@ -31,6 +32,7 @@ def mode_body_diagrams(
     age_pal: dict,
     titles = True,
     label_suff = '',
+    keypt_conv = lambda arr: arr,
     ax = None,
     ):
 
@@ -58,13 +60,13 @@ def mode_body_diagrams(
         for a in ax[1:, i_subj].ravel():
             offset = (params.offset + params.offset_updates[vid_ix])
             plot_mouse(
-                keypt_frame = offset.reshape(14, 3),
+                keypt_frame = keypt_conv(offset).reshape(14, 3),
                 xaxis = xaxis, yaxis = yaxis, ax = a,
                 **ref_diagram_kws)
 
         curr_age = ages[vid_id]
         plot_mouse(
-            keypt_frame = offset.reshape(14, 3),
+            keypt_frame = keypt_conv(offset).reshape(14, 3),
             xaxis = xaxis, yaxis = yaxis, ax = ax[0, i_subj],
             **age_diagram_kws[curr_age]
         )
@@ -80,7 +82,7 @@ def mode_body_diagrams(
             mode_pose = afm.AffineModeMorph.transform(
                 params, mode_display[:, i_mode], jnp.array([vid_ix]))
             plot_mouse(
-                keypt_frame = mode_pose.reshape(14, 3),
+                keypt_frame = keypt_conv(mode_pose).reshape(14, 3),
                 xaxis = xaxis, yaxis = yaxis, ax = ax[i_mode + 1, i_subj],
                 **age_diagram_kws[curr_age]
             )

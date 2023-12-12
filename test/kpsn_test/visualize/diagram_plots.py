@@ -2,7 +2,15 @@ from matplotlib import collections
 from matplotlib import patches
 import numpy as np
 
+from jax import tree_util as pt
+
 from kpsn.util.keypt_io import keypt_parents
+
+def tree_unique(tree):
+    return pt.tree_reduce(lambda a, b:
+        np.unique(np.concatenate([np.unique(a), np.unique(b)])),
+        tree)
+
 
 def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}, label = None, line2_kw = None, labelon = 'line', zorder = 0):
     
@@ -34,13 +42,19 @@ def plot_mouse(ax, keypt_frame, xaxis, yaxis, scatter_kw = {}, line_kw = {}, lab
 
 def pose_gallery_ixs(
     keypts,
-    skel):
-    nframe = len(keypts)
+    skel,
+    valid_frames = None):
+    
+    if valid_frames is None:
+        valid_frames = np.arange(len(keypts))
+    nframe = len(valid_frames)
+    keypts = keypts[valid_frames]
+
     keypts = keypts.reshape([nframe, skel.n_kpts, -1])
     head_ht = np.argsort(keypts[:, skel.keypt_by_name['head'], 2])
     head_ln = np.argsort(keypts[:, skel.keypt_by_name['head'], 0])
     back_wd = np.argsort(keypts[:, skel.keypt_by_name['back'], 1])
-    quantile = lambda ix_arr, pct: ix_arr[int(pct * nframe)]
+    quantile = lambda ix_arr, pct: valid_frames[ix_arr[int(pct * nframe)]]
     return {
         'high': quantile(head_ht, 0.1),
         'low': quantile(head_ht, 0.9),
@@ -48,6 +62,33 @@ def pose_gallery_ixs(
         'small': quantile(head_ln, 0.9),
         'left': quantile(back_wd, 0.2),
         'right': quantile(back_wd, 0.8)}
+
+
+def valid_display_frames(frame_ids):
+    """
+    frame_ids : iterable[int array (n_frames,)]
+    Returns
+    -------
+    valid_ids : int array (n_valid,)
+        Frame ids that are used in all videos
+    """
+    frame_ids = list(frame_ids)
+    all_ids = tree_unique(frame_ids)
+    mask = np.ones_like(all_ids, dtype = bool)
+    for ids in frame_ids:
+        mask &= np.isin(all_ids, ids)
+    return all_ids[mask]
+
+
+def frame_examples(query_frames, library_frames):
+    """
+    query_frames: int array (n_search,)
+    library_frames: int array (n_libray,)
+    Returns:
+    library_ixs: int array (n_search,)
+        Indices in `library_frames` where each element of `query_frames` occurs.
+    """
+    return (query_frames[:, None] == library_frames[None, :]).argmax(axis = 1)
 
 
 

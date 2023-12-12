@@ -13,30 +13,42 @@ def plot(
     **kwargs
     ):
 
-    bhv_counts = dataset['metadata']['bhv_counts']
+    bhv_counts = dataset['metadata'][cfg['counts']]
+    sess_bhv_tags = dataset['metadata'][cfg['bhv']]
     ex_sess = list(bhv_counts.keys())[0]
+    N = len(bhv_counts)
     L = bhv_counts[ex_sess].size
     clusterpal = sns.color_palette('Set2', n_colors = L)
 
-    kmeans = dataset['metadata']['shared']['kmeans']
-    kpts = {sess: 
-        dataset['keypts'][dataset['metadata']['session_slice'][sess]].astype(np.float32)
-        for sess in dataset['metadata']['session_slice']}
-    true_counts = {sess: masks_and_logits(
-        kmeans.transform(kpts[sess]).argmin(axis = 1),
-        L)[1]
-        for sess in dataset['metadata']['session_slice']}
+    # get true counts of behavior matching each cluster
+    # kmeans = dataset['metadata']['shared']['kmeans']
+    # kpts = {sess: 
+    #     dataset['keypts'][dataset['metadata']['session_slice'][sess]].astype(np.float32)
+    #     for sess in dataset['metadata']['session_slice']}
+    # true_counts = {sess: masks_and_logits(
+    #     kmeans.transform(kpts[sess]).argmin(axis = 1),
+    #     L)[1]
+    #     for sess in dataset['metadata']['session_slice']}
+
+    # find example sessions with the correct 'bhv' tag
+    sessions = [dataset['metadata']['session_ix'].inverse[i] for i in range(N)]
+    tag_list = [sess_bhv_tags[sess] for sess in sessions]
+    bhvs, ex_ixs = np.unique(tag_list, return_index=True)
+    ex_sessions = [sessions[i] for i in ex_ixs]
 
     fig, ax = plt.subplots(1, L, figsize = (1.5 * L, 2), sharex = True, sharey = True)
-    for i_sess, sess in enumerate(bhv_counts):
-        ax[i_sess].bar(np.arange(L), bhv_counts[sess], color = clusterpal)
-        ax[i_sess].plot(np.arange(L), true_counts[sess], 'ko')
-        ax[i_sess].set_title(sess)
-        sns.despine(ax = ax[i_sess])
+    for i_bhv, (bhv, ex_sess) in enumerate(zip(bhvs, ex_sessions)):
+        ax[i_bhv].bar(np.arange(L), bhv_counts[ex_sess], color = clusterpal)
+        # ax[i_sess].plot(np.arange(L), true_counts[sess], 'ko')
+        ax[i_bhv].set_title(bhv)
+        sns.despine(ax = ax[i_bhv])
     ax[0].set_ylabel("Counts")
     ax[0].set_xlabel("Cluster")
     fig.tight_layout()
 
     return {plot_name: fig}
 
-defaults = dict()
+defaults = dict(
+    counts = 'bhv_counts',
+    bhv = 'bhv'
+)

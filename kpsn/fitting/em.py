@@ -242,6 +242,11 @@ def _mstep(
     hyper_stat, hyper_dyna = hyperparams.as_static_dynamic_parts()
     param_trace = logging.ReportTrace(n_steps)
 
+    # sanity_cov = curr_params.with_hyperparams(hyperparams
+    # ).posespace.covariances(log=True)
+    # eig = jnp.linalg.eigvalsh(sanity_cov)
+    # jax.debug.print("log sane {}", eig.min(axis = -1))
+
     if batch_size is not None:
         batch_rkey_seed = jr.PRNGKey(batch_seed)
         unstacked_ixs = computations.unstacked_ixs(

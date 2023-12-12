@@ -29,6 +29,7 @@ def generate(
         session_slice = slices,
         bhv = {f'm{i}': i for i in range(cfg['n_clust'])},
         bhv_counts = resamp['counts'],
+        frame_ids = resamp['sampled_frames'],
         src_sess = {sess: cfg['src_sess'] for sess in slices},
         shared = dict(clusters = resamp['clusters'].cluster_centers_,
                       kmeans = resamp['clusters']),

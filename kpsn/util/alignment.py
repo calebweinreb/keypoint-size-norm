@@ -153,3 +153,18 @@ def inverse_scalar_align(keypts, scales):
     return [
         keypts[i] * scales[i]
         for i in range(len(keypts))]
+
+
+def gen_kpt_func(feat_arr, origin_keypt, armature = None):
+    """Automatically determine if redundant dimensions should be inserted and
+    return default conversion functions."""
+    if armature is None:
+        from .skeleton import default_armature as armature 
+    if feat_arr.shape[-1] < 42:
+        to_kpt = lambda arr: sagittal_align_insert_redundant_subspace(
+            arr, origin_keypt, armature)
+        to_feat = lambda arr: sagittal_align_remove_redundant_subspace(
+            arr, origin_keypt, armature)
+    else:
+        to_kpt = lambda arr: arr
+    return to_kpt, to_feat

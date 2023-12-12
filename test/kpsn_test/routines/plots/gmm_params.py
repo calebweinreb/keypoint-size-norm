@@ -136,9 +136,6 @@ def plot(
                 lw = 0.2, color = '.8')
             sns.despine(ax = ax[param][comp_i])
         ax['wt'][comp_i].set_ylim(0, 1)
-        # ax['diag'][comp_i].set_yscale('log')
-        # if cfg['logdet']:
-            # ax['det'][comp_i].set_yscale('log')
         
     # set axis labels
     ax['mean'][0].set_ylabel(f"Component \n means")

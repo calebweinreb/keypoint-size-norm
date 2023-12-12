@@ -7,6 +7,25 @@ from kpsn_test.routines.datasets import npy_keypts
 
 import jax.random as jr
 
+def random_morph(gt_obs, M, n_subj, ref_subj_ix, id_subj_ix, rngk, hyper_kw, param_kw):
+
+    morph_hyperparams = afm.init_hyperparams(
+        observations = gt_obs,
+        N = n_subj, M = M,
+        reference_subject = ref_subj_ix,
+        identity_sess = id_subj_ix,
+        upd_var_modes = 0, # prior variance params don't matter - not learning
+        upd_var_ofs = 0,
+        **hyper_kw)
+
+    morph_params = afm.sample_parameters(
+        rkey = rngk,
+        hyperparams = morph_hyperparams,
+        **param_kw)
+
+    return morph_params.with_hyperparams(morph_hyperparams)
+
+
 def generate(
     cfg: dict,
     ):
@@ -14,11 +33,6 @@ def generate(
     (N, M), gt_obs, metadata = npy_keypts.generate(
         cfg = cfg
     )
-    # if not cfg['output_indep']:
-    #     feats = alignment.sagittal_align_insert_redundant_subspace(
-    #         gt_obs.keypts, cfg['origin_keypt'], skeleton.default_armature)
-    # else:
-    #     feats = gt_obs.keypts
 
     # ----- set up identical poses for each session
     src_keypts = gt_obs.keypts[metadata['session_slice'][cfg['src_sess']]]
@@ -28,21 +42,12 @@ def generate(
     session_ix, session_ids = keypt_io.ids_from_slices(gt_all_poses, slices)
 
     # ------ sample parameters and apply to poses
-    morph_hyperparams = afm.init_hyperparams(
-        observations = pose.Observations(gt_all_poses, session_ids),
-        N = cfg['n_subj'], M = M,
-        reference_subject = session_ix['subj0'],
-        identity_sess = session_ix['subj0'],
-        upd_var_modes = 0, # prior variance params don't matter - not learning
-        upd_var_ofs = 0,
-        **cfg['hyperparam'])
-
-    morph_params = afm.sample_parameters(
-        rkey = jr.PRNGKey(cfg['seed']),
-        hyperparams = morph_hyperparams,
-        **cfg['param_sample'])
-
-    params = morph_params.with_hyperparams(morph_hyperparams)
+    
+    params = random_morph(
+        pose.Observations(gt_all_poses, session_ids),
+        M, cfg['n_subj'], session_ix['subj0'], session_ix['subj0'],
+        jr.PRNGKey(cfg['seed']), cfg['hyperparam'], cfg['param_sample']
+    )
     all_feats = afm.transform(params, gt_all_poses, session_ids)
 
     # ------ format new dataset and return

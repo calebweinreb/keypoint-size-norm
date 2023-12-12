@@ -142,19 +142,58 @@ def expand_tril(
 
 
 
+# def expand_tril_cholesky(
+#     tril_values: Float[Array, "*#K n*(n+1)/2"],
+#     n: int
+#     ) -> Float[Array, "*#K n n"]:
+
+#     """
+#     Lower-triangular flat-form cholesky decomposition to positive-definite
+#     """
+
+#     tmp = jnp.zeros(tril_values.shape[:-1] + (n, n))
+#     tril = jnp.tril_indices(n)
+#     L = tmp.at[..., tril[0], tril[1]].set(tril_values)
+#     return L @ jnp.swapaxes(L, -2, -1)
+
+
+# def extract_tril_cholesky(
+#     A: Float[Array, "*#K n n"],
+#     ) -> Float[Array, "*#K n(n+1)/2"]:
+
+#     """Lower-triangular flat-form cholesky decomposition of positive-definite"""
+
+#     L = jnp.linalg.cholesky(A)
+#     n = L.shape[-1]
+#     tril = jnp.tril_indices(n)
+#     return L[..., tril[0], tril[1]]
+
+
 def expand_tril_cholesky(
-    tril_values: Float[Array, "*#K n*(n+1)/2"],
-    n: int
+    cholesky: Float[Array, "*#K n*(n+1)/2"],
+    n: int,
+    log = False
     ) -> Float[Array, "*#K n n"]:
 
     """
     Lower-triangular flat-form cholesky decomposition to positive-definite
     """
 
-    tmp = jnp.zeros(tril_values.shape[:-1] + (n, n))
-    tril = jnp.tril_indices(n)
-    L = tmp.at[..., tril[0], tril[1]].set(tril_values)
-    return L @ jnp.swapaxes(L, -2, -1)
+    log_diag = cholesky[..., :n]
+    tril = cholesky[..., n:]
+    tmp = jnp.zeros(cholesky.shape[:-1] + (n, n))
+    tril_ix = jnp.tril_indices(n, k = -1)
+    diag_ix = jnp.diag_indices(n)
+    L = tmp.at[..., tril_ix[0], tril_ix[1]].set(tril)
+    L = L.at[..., diag_ix[0], diag_ix[1]].set(jnp.exp(log_diag))
+    pd = L @ jnp.swapaxes(L, -2, -1)
+    # eig = jnp.linalg.eigvalsh(pd)
+    # if log:
+    #     jax.debug.print("log {}", eig.min(axis = -1))
+    # jax.lax.cond((eig < 1e-6).sum() > 0,
+    #     lambda: jax.debug.print("neg! {} cause {}", eig, cholesky),
+    #     lambda: None)
+    return pd
 
 
 def extract_tril_cholesky(
@@ -165,9 +204,11 @@ def extract_tril_cholesky(
 
     L = jnp.linalg.cholesky(A)
     n = L.shape[-1]
-    tril = jnp.tril_indices(n)
-    return L[..., tril[0], tril[1]]
-
+    tril_ix = jnp.tril_indices(n, k = -1)
+    diag_ix = jnp.diag_indices(n)
+    tril = L[..., tril_ix[0], tril_ix[1]]
+    log_diag = jnp.log(L[..., diag_ix[0], diag_ix[1]])
+    return jnp.concatenate([log_diag, tril], axis = -1)
 
 
     

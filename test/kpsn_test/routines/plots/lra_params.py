@@ -12,14 +12,14 @@ def plot(
     cfg,
     **kwargs,
     ):
-
+    
     mstep_lengths = fitting.mstep_lengths(fit['mstep_losses'])
     mstep_lengths = [m for m in mstep_lengths if m > 1]
     hyperparams = fit['fit_params'].hyperparams.morph
     steps = np.arange(0, len(mstep_lengths), cfg['stepsize'])
     pal = viz_defaults.age_pal(dataset['metadata'][cfg['colorby']])
 
-    fig, ax = plt.subplots(2, 1,
+    fig, ax = plt.subplots(1 + hyperparams.L, 1,
         figsize = (12, 4),
         sharex = 'col', sharey = 'row')
     ax = ax[:, None]

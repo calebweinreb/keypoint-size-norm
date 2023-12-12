@@ -44,6 +44,11 @@ class ReportTrace():
 
     def map(self, func): self._tree = pt.tree_map(func, self._tree)
 
+    def copy(self):
+        ret = ReportTrace(self._n_steps)
+        ret._tree = pt.tree_map(lambda arr: arr.copy(), self._tree)
+        return ret
+
     def __len__(self): return self._n_steps
 
     def __getitem__(self, step): return pt.tree_map(

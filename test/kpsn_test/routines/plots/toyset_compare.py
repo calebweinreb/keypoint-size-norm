@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 from kpsn_test import visualize as viz
 from kpsn.util import skeleton, alignment, keypt_io
@@ -11,17 +12,16 @@ def plot_for_params(dataset, params, cfg):
     meta = dataset['metadata']
 
     # --- setup: find representative frames    
-    if dataset['keypts'].shape[-1] < 42:
-        to_kpt = lambda arr: alignment.sagittal_align_insert_redundant_subspace(
-            arr, cfg['origin_keypt'], skeleton.default_armature)
-    else:
-        to_kpt = lambda arr: arr
+    to_kpt, to_feat = alignment.gen_kpt_func(dataset['keypts'], cfg['origin_keypt'])
 
-    src_slc = meta['session_slice'][cfg['ref_sess']]
+    src_slc = meta['session_slice'][cfg['ref_sess']] 
     src_all_kpts = to_kpt(dataset['keypts'][src_slc])
 
+    if cfg['match_mode'] == 'meta':
+        valid_frames = viz.diagram_plots.valid_display_frames(meta['frame_ids'].values())
+    else: valid_frames = None
     frames = viz.diagram_plots.pose_gallery_ixs(
-        src_all_kpts, skeleton.default_armature)
+        src_all_kpts, skeleton.default_armature, valid_frames = valid_frames)
 
     # --- setup: create groups and figure
     bodies, body_groups = keypt_io.get_groups_dict(meta[cfg['colorby']])
@@ -43,12 +43,17 @@ def plot_for_params(dataset, params, cfg):
                 tgt_kpts = to_kpt(dataset['keypts'][tgt_slc][frame]) 
             elif cfg['match_mode'] == 'same':
                 tgt_kpts = src_kpts
+            elif cfg['match_mode'] == 'meta':
+                tgt_frame = np.where(meta['frame_ids'][tgt_sess] == frame)[0][0]
+                src_frame = np.where(meta['frame_ids'][cfg['ref_sess']] == frame)[0][0]
+                src_kpts = src_all_kpts[src_frame]
+                tgt_kpts = to_kpt(dataset['keypts'][tgt_slc][tgt_frame]) 
             else:
-                raise ValueError(f"match mode must be [frame, same]. got {cfg['match_mode']}")
+                raise ValueError(f"match mode must be [frame, same, match]. got {cfg['match_mode']}")
 
             # --- morph from reference subject to target
             pose = afm.inverse_transform(
-                params, dataset['keypts'][src_slc][frame], meta['session_ix'][cfg['ref_sess']])
+                params, to_feat(src_kpts), meta['session_ix'][cfg['ref_sess']])
             reconst = afm.transform(
                 params, pose, meta['session_ix'][tgt_sess])
             reconst_kpts = to_kpt(reconst)
@@ -116,4 +121,5 @@ defaults = dict(
     match_mode = 'frame',
         # frame: assume frames correspond across videos
         # same: use keypoints from the reference session
+        # meta: use frame_id from metadata to meta
 )   
