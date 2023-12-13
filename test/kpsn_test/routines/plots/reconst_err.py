@@ -43,8 +43,8 @@ def plot(
 
     # if passed full m-step parameter traces: select last entry from m-step
     param_hist = fit['param_hist'].copy()
+    mstep_lengths = np.array(viz.fitting.mstep_lengths(fit['mstep_losses']))
     if param_hist[0].posespace.means.ndim > 2:
-        mstep_lengths = np.array(viz.fitting.mstep_lengths(fit['mstep_losses']))
         param_hist.map(lambda arr: arr[np.arange(len(arr)), mstep_lengths - 2])
 
     # find frame indices that match across videos

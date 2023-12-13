@@ -26,7 +26,7 @@ def plot(
     else: hist_mode = 'step-point'
 
     params = ['mean', 'diag', 'det', 'wt']
-    n_param = 5
+    n_param = len(params)
     fax = {
         param: plt.subplots(hyperparams.L, 1,
             figsize = (12, hyperparams.L),
@@ -110,7 +110,6 @@ def plot(
     pop_lines = [np.concatenate(arr) for arr in pop_lines]
     subj_lines = [np.concatenate(arr) for arr in subj_lines]
 
-    print(xs.shape, mean_lines[0].shape, diag_lines[0].shape, det_lines[0].shape, pop_lines[0].shape, subj_lines[0].shape)
 
     # plot concatenated lines
     for comp_i in range(hyperparams.L):
