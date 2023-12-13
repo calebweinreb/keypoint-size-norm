@@ -51,7 +51,7 @@ def generate(
         if tgt_age == src_age: pass
 
         new_sess = f'{tgt_age}wk_m{metadata["id"][src_sess]}'
-        length_ratios = age_lengths[tgt_age] / age_lengths[src_age]
+        length_ratios = (age_lengths[tgt_age] / age_lengths[src_age]) ** cfg['effect']
         remap_bones[new_sess] = all_bones[slc] * length_ratios[None, :, None]
         for k in metadata:
             remap_meta[f'src-{k}'][new_sess] = metadata[k][src_sess]
@@ -105,6 +105,7 @@ defaults = dict(
     src_sess = None,
     reroot = 'hips',
     tgt_ages = None,
+    effect = 1.,
     **npy_keypts.defaults,
     resamp = dict(kind=None, temp=0.3)
 )

@@ -14,9 +14,9 @@ def find_file(key, fmt, override_paths = None, fallback_fmt = None):
     elif fallback is not None and os.path.exists(fallback): return fallback
     else: return putative
 
-def save_results(output_fmt, fmt, savefunc, omit = (), verbose = True):
+def save_results(output_fmt, fmt, ext, savefunc, omit = (), verbose = True):
     if fmt in omit: return
-    path = output_fmt.format(fmt)
+    path = output_fmt.format(name = fmt, ext = ext)
     dirname = os.path.dirname(path)
     if not os.path.exists(dirname):
         if verbose:
@@ -57,16 +57,15 @@ def load_cfg(string):
         return {}
     if string is None:
         return {}
+    elif isinstance(string, dict):
+        return deepen_dict(string)
     elif string.endswith('.json'):
         with open(string) as f:
             return json.load(f)
-    elif isinstance(string, dict):
-        return deepen_dict(string)
     else:
         def try_eval(s):
             try: return eval(s)
             except: return s
-        
         ret = {}
         for kv in string.split(':'):
             kv = [s.strip() for s in kv.split('=')]
@@ -91,7 +90,7 @@ def load_cfg(string):
 def load_cfg_list(cfgs):
     ret = {}
     for cfg in cfgs:
-        ret = update(ret, cfg, warn_not_present=False, add=True)
+        ret = update(ret, load_cfg(cfg), warn_not_present=False, add=True)
     return ret
 
 def load_cfg_lists(cfg_dict):
@@ -165,6 +164,7 @@ def sort_cfg_list(args, shorthands = {}, base = None):
             if cfg_for in shorthands:
                 cfg_for = shorthands[cfg_for]
             cfg_value = split_str[-1]
+            sorted_pairs.append((cfg_for, cfg_value))
 
     if base is None: sorted_cfgs = {}
     else: sorted_cfgs = base
@@ -172,7 +172,7 @@ def sort_cfg_list(args, shorthands = {}, base = None):
     for cfg_for, cfg_value in sorted_pairs:
         if cfg_for not in sorted_cfgs:
             sorted_cfgs[cfg_for] = []
-        sorted_cfgs[cfg_for].append(cfg_data)
+        sorted_cfgs[cfg_for].append(cfg_value)
     
     return sorted_cfgs
         

@@ -15,7 +15,7 @@ from .pose_model import *
 from ...util.computations import (
     expand_tril_cholesky, extract_tril_cholesky,
     sq_mahalanobis)
-
+from ...util import distributions
 
 class GMMTrainedParams(NamedTuple):
     """
@@ -81,6 +81,8 @@ class GMMHyperparams(NamedTuple):
     diag_eps: float
     pop_weight_uniformity: float
     subj_weight_uniformity: float
+    wish_var: float
+    wish_dof: float
 
     def as_static_dynamic_parts(self):
         return (self, None)
@@ -88,6 +90,18 @@ class GMMHyperparams(NamedTuple):
     @staticmethod
     def from_static_dynamic_parts(static, dynamic):
         return static
+    
+def GMMHyperparams__new__(cls,
+    N, M, L, diag_eps,
+    pop_weight_uniformity, subj_weight_uniformity,
+    wish_var = None, wish_dof = None):
+    from builtins import tuple as _tuple
+    return _tuple.__new__(cls, (
+        N, M, L, diag_eps,
+        pop_weight_uniformity, subj_weight_uniformity,
+        wish_var, wish_dof
+        ))
+GMMHyperparams.__new__ = GMMHyperparams__new__
 
 
 class GMMParameters(NamedTuple):
@@ -103,6 +117,8 @@ class GMMParameters(NamedTuple):
         self.hyperparams.pop_weight_uniformity)
     subj_weight_uniformity = property(lambda self:
         self.hyperparams.subj_weight_uniformity)
+    wish_var = property(lambda self: self.hyperparams.wish_var)
+    wish_dof = property(lambda self: self.hyperparams.wish_dof)
     # passthrough of some parameters
     means = property(lambda self: self.trained_params.means)
     cholesky = property(lambda self: self.trained_params.cholesky)
@@ -237,12 +253,16 @@ def sample_hyperparams(
     L: int,
     diag_eps: float,
     pop_weight_uniformity: float,
-    subj_weight_uniformity: float) -> GMMHyperparams:
+    subj_weight_uniformity: float,
+    wish_var: float,
+    wish_dof: float) -> GMMHyperparams:
     return GMMHyperparams(
         N, M, L,
         diag_eps,
         pop_weight_uniformity,
-        subj_weight_uniformity)
+        subj_weight_uniformity,
+        wish_var,
+        wish_dof)
     
 
 
@@ -390,12 +410,16 @@ def init_hyperparams(
     L: int,
     diag_eps: float,
     pop_weight_uniformity: float,
-    subj_weight_uniformity: float) -> GMMHyperparams:
+    subj_weight_uniformity: float,
+    wish_var: float,
+    wish_dof: float) -> GMMHyperparams:
     return GMMHyperparams(
         N, M, L,
         diag_eps,
         pop_weight_uniformity,
-        subj_weight_uniformity)
+        subj_weight_uniformity,
+        wish_var,
+        wish_dof)
 
 
 def init(
@@ -527,16 +551,24 @@ def log_prior(
             params.subj_weight_uniformity *
             pop_weights
         ).log_prob(params.weights())
-
-        return dict(
-            pop_weight  = pop_logpdf,
-            subj_weight = subj_logpdf,
-        )
     else:
-        return dict(
-            pop_weight  = jnp.array(0),
-            subj_weight = jnp.array(0),
-        )
+        pop_logpdf = jnp.array(0)
+        subj_logpdf = jnp.array(0)
+    
+    # wishart prior on covariances
+    if params.wish_var is not None:
+        cov_logpdf = distributions.InverseWishart(
+            params.wish_dof,
+            params.wish_var * jnp.eye(params.M)
+        ).log_prob(params.covariances())
+    else:
+        cov_logpdf = jnp.array(0)
+
+    return dict(
+        pop_weight  = pop_logpdf,
+        subj_weight = subj_logpdf,
+        cov         = cov_logpdf
+    )
     
 
 def reports(

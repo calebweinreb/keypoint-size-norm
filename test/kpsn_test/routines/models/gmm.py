@@ -8,6 +8,8 @@ defaults = dict(
         diag_eps = None,
         pop_weight_uniformity = 10,
         subj_weight_uniformity = 100,
+        wish_var = None,
+        wish_dof = None
     ),
     init = dict(
         uniform = False,

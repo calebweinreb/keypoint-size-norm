@@ -1,0 +1,48 @@
+#!/bin/bash
+
+rungroup=$1
+runname="$rungroup/$2"
+newname="$rungroup/$3"
+doreplace=$4
+
+rootdir=$HOME/projects/mph/generative
+plotdir=$rootdir/plots/$runname
+resultsdir=$rootdir/results/$runname
+
+if [ ! -d "$plotdir" ]; then
+    echo "No plot directory $plotdir"
+    exit
+fi
+if [ ! -d "$resultsdir" ]; then
+    echo "No plot directory $resultsdir"
+    exit
+fi
+
+
+new_plotdir=$rootdir/plots/$newname
+new_resultsdir=$rootdir/results/$newname
+
+echo $new_plotdir $new_resultsdir
+if [ -d "$new_plotdir" ]; then
+    if [ "$doreplace" == "-y" ]; then
+        echo "Removing plot directory: $new_plotdir"
+        rm -rf $new_plotdir
+    else
+        echo "Destination plot directory already exists: $new_plotdir"
+        exit
+    fi
+fi
+if [ -d "$new_resultsdir" ]; then
+    if [ "$doreplace" == "-y" ]; then
+        echo "Removing results directory: $new_resultsdir"
+        rm -rf $new_resultsdir
+    else
+        echo "Destination results directory already exists: $new_resultsdir"
+        exit
+    fi
+fi
+
+mv $plotdir $new_plotdir
+mv $resultsdir $new_resultsdir
+
+echo "Moved $runname -> $newname"
