@@ -21,8 +21,11 @@ def plot(
     steps = np.arange(0, len(mstep_lengths), cfg['stepsize'])
     pal = sns.color_palette('Set1', n_colors = hyperparams.L)
     subj_pal = viz.defaults.age_pal(dataset['metadata'][cfg['colorby']])
+    if fit['param_hist'].as_dict().morph.offset_updates.ndim > 3:
+        hist_mode = 'mstep-line'
+    else: hist_mode = 'step-point'
 
-    params = ['mean', 'diag', 'offdiag', 'det', 'wt']
+    params = ['mean', 'diag', 'det', 'wt']
     n_param = 5
     fax = {
         param: plt.subplots(hyperparams.L, 1,
@@ -33,21 +36,17 @@ def plot(
     fig = {param: fax[param][0] for param in params}
     ax  = {param: fax[param][1] for param in params}
 
-    # for comp_i in range(1, hyperparams.L):
-        # for i in range(n_param):
-            # ax[comp_i + i * hyperparams.L, 0].sharey(ax[i * hyperparams.L, 0])
 
     # ----- empty lists of parameter changes over m steps
     xs = []
     global_steps = [0]
     mean_lines = [[] for i in range(hyperparams.L)]
     diag_lines = [[] for i in range(hyperparams.L)]
-    offdiag_lines = [[] for i in range(hyperparams.L)]
     det_lines = [[] for i in range(hyperparams.L)]
     pop_lines = [[] for i in range(hyperparams.L)]
     subj_lines = [[] for i in range(hyperparams.L)]
     def insert_nans():
-        for i, lines in enumerate([mean_lines, diag_lines, offdiag_lines, det_lines, pop_lines, subj_lines]):
+        for i, lines in enumerate([mean_lines, diag_lines, det_lines, pop_lines, subj_lines]):
             for line in lines:
                 line.append(np.full((1,) + line[-1].shape[1:], np.nan))
         xs.append(xs[-1][[-1]])
@@ -59,61 +58,65 @@ def plot(
     for step in tqdm.tqdm(steps):
         step_params = fit['param_hist'][step]
         step_params = step_params.posespace.with_hyperparams(hyperparams)
-        diag_mask = np.eye(hyperparams.M).astype('bool')
         step_len = mstep_lengths[step]
 
-        step_x = np.arange(global_step, global_step + step_len)
+        if hist_mode == 'mstep-line':
+            step_x = np.arange(global_step, global_step + step_len)
+        else:
+            step_x = np.array([global_step])
         xs.append(step_x)
         global_steps.append(global_step)
 
         for comp_i in range(hyperparams.L):
 
+            if hist_mode == 'mstep-line':
+                step_slice = (slice(None, step_len), comp_i)
+            else:
+                step_slice = (None, comp_i,)
+
             # means
-            mean_lines[comp_i].append(step_params.means[:step_len, comp_i])
+            mean_lines[comp_i].append(step_params.means[step_slice])
             
             # eigs or diag
-            if cfg['eigs']:
-                cov_eig = np.log(np.linalg.eigvalsh(step_params.covariances()[:step_len, comp_i]))
-                diag_lines[comp_i].append(cov_eig)
-            else:
-                diag_lines[comp_i].append(
-                    np.log10(step_params.covariances()[:step_len, comp_i][:, diag_mask]))
-                
-            # off-diag
-            offdiag_lines[comp_i].append(
-                step_params.covariances()[:step_len, comp_i][:, ~diag_mask][:, ::51])
+            cov_eig = np.log(np.linalg.eigvalsh(step_params.covariances()[step_slice]))
+            diag_lines[comp_i].append(cov_eig)
             
             # determinant
             det_lines[comp_i].append(
-                np.log10(np.linalg.det(step_params.covariances()[:step_len, comp_i])))
+                np.log10(np.linalg.det(step_params.covariances()[step_slice])))
             
             # weights
-            pop_lines[comp_i].append(step_params.pop_weights()[:step_len, comp_i])
-            subj_lines_ = np.zeros([step_len, len(dataset['metadata'][cfg['colorby']])])
+            pop_lines[comp_i].append(step_params.pop_weights()[step_slice])
+            subj_lines_ = np.zeros([
+                step_len if hist_mode == 'mstep-line' else 1,
+                len(dataset['metadata'][cfg['colorby']])])
             for sess in dataset['metadata'][cfg['colorby']]:
                 ix = dataset['metadata']['session_ix'][sess]
-                subj_lines_[:, ix] = step_params.weights()[:step_len, ix, comp_i]
+                weights = np.swapaxes(step_params.weights(), -2, -1)
+                subj_lines_[:, ix] = weights[step_slice][..., ix]
             subj_lines[comp_i].append(subj_lines_)
-                
-        insert_nans()
+            
+        if hist_mode == 'mstep-line':
+            insert_nans()
         global_step += step_len
+
+    
 
     # concatenate arrays from each m step
     xs = np.concatenate(xs)
     mean_lines = [np.concatenate(arr) for arr in mean_lines]
     diag_lines = [np.concatenate(arr) for arr in diag_lines]
-    offdiag_lines = [np.concatenate(arr) for arr in offdiag_lines]
     det_lines = [np.concatenate(arr) for arr in det_lines]
     pop_lines = [np.concatenate(arr) for arr in pop_lines]
     subj_lines = [np.concatenate(arr) for arr in subj_lines]
+
+    print(xs.shape, mean_lines[0].shape, diag_lines[0].shape, det_lines[0].shape, pop_lines[0].shape, subj_lines[0].shape)
 
     # plot concatenated lines
     for comp_i in range(hyperparams.L):
         ax['mean'][comp_i].plot(xs, mean_lines[comp_i],
             color = pal[comp_i], **line_kw)
         ax['diag'][comp_i].plot(xs, diag_lines[comp_i],
-            color = pal[comp_i], **line_kw)
-        ax['offdiag'][comp_i].plot(xs, offdiag_lines[comp_i],
             color = pal[comp_i], **line_kw)
         ax['det'][comp_i].plot(xs, det_lines[comp_i],
             color = pal[comp_i], **line_kw)
@@ -143,7 +146,6 @@ def plot(
         ax['diag'][0].set_ylabel(f"Cov eigs")
     else:
         ax['diag'][0].set_ylabel(f"Cov diag")
-    ax['offdiag'][0].set_ylabel(f"Cov off-diag")
     ax['det'][0].set_ylabel(f"Cov det")
     ax['wt'][0].set_ylabel(f"Pop and subj\nweights")
         

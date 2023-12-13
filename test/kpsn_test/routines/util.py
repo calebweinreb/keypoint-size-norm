@@ -138,7 +138,7 @@ def update(default, new, warn_not_present = True, add = False):
 
 def sort_cfg_list(args, shorthands = {}, base = None):
     """
-    In: "d#key=value:key1=value1" "kevals.json"
+    In: "d@key=value:key1=value1#kevals.json"
     kevals.json = {d: {key2: value2}}
     Out: dict(d = ["key=value:key1=value1", {key2: value2}])
     
@@ -147,24 +147,25 @@ def sort_cfg_list(args, shorthands = {}, base = None):
     Out: dict(data = ["key=value:key1=value1", {key2: value2}])
     """
     sorted_pairs = []
-    for cfg_str in args:
-        if cfg_str.endswith('.json'):
-            with open(cfg_str) as f:
-                cfg_data = json.load(f)
-                for cfg_for, cfg_value in cfg_data:
-                    if cfg_for in shorthands:
-                        cfg_for = shorthands[cfg_for]
-                    sorted_pairs.append((cfg_for, cfg_value))
-        else:
-            split_str = cfg_str.split('#')
-            if len(split_str) < 2:
-                print(f"WARNING: Could not determine destination for config {cfg_str}")
-                continue
-            cfg_for = split_str[0]
-            if cfg_for in shorthands:
-                cfg_for = shorthands[cfg_for]
-            cfg_value = split_str[-1]
-            sorted_pairs.append((cfg_for, cfg_value))
+    for cfg_strs in args:
+        for cfg_str in cfg_strs.split('#'):
+            if cfg_str.endswith('.json'):
+                with open(cfg_str) as f:
+                    cfg_data = json.load(f)
+                    for cfg_for, cfg_value in cfg_data:
+                        if cfg_for in shorthands:
+                            cfg_for = shorthands[cfg_for]
+                        sorted_pairs.append((cfg_for, cfg_value))
+            else:
+                split_str = cfg_str.split('@')
+                if len(split_str) != 2:
+                    print(f"WARNING: Could not determine destination for config {cfg_str}")
+                    continue
+                cfg_for = split_str[0].strip()
+                if cfg_for in shorthands:
+                    cfg_for = shorthands[cfg_for]
+                cfg_value = split_str[1]
+                sorted_pairs.append((cfg_for, cfg_value))
 
     if base is None: sorted_cfgs = {}
     else: sorted_cfgs = base

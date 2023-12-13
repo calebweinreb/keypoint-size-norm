@@ -18,13 +18,14 @@ def plot(
     hyperparams = fit['fit_params'].hyperparams.morph
     steps = np.arange(0, len(mstep_lengths), cfg['stepsize'])
     pal = viz_defaults.age_pal(dataset['metadata'][cfg['colorby']])
+    if fit['param_hist'][0].as_dict().morph.offset_updates.ndim > 2:
+        hist_mode = 'mstep-line'
+    else: hist_mode = 'step-point'
 
     fig, ax = plt.subplots(1 + hyperparams.L, 1,
         figsize = (12, 4),
         sharex = 'col', sharey = 'row')
     ax = ax[:, None]
-    # if ax.ndim < 2:
-        # ax = ax.reshape([2, len(steps)])
 
     line_kw = dict(lw = 0.3)
     global_step = 0
