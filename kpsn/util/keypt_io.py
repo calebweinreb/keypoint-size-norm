@@ -162,14 +162,19 @@ def test_dataset(dirname = "data"):
 def truncate_videos(keypts, n_frames):
     return [k[:n_frames] for k in keypts]
 
-def split_videos(metadata, keypts, n_parts, video_key = 'subj_vid'):
+def split_videos(metadata, keypts, n_parts, video_key = 'subj_vid', new_id = 'split_id', src_id = 'id'):
     splitten = [np.array_split(k, n_parts) for k in keypts]
     new_kpts = [splitten[i][j] for i in range(len(keypts)) for j in range(n_parts) ]
     new_metadata = {
         k: [val for val in v for _ in range(n_parts)]
         for k, v in metadata.items()
     }
-    new_metadata[video_key] = [i for _ in range(len(keypts)) for i in range(n_parts)]
+    new_metadata[src_id] = [
+        metadata["id"][i] for j in range(len(keypts)) for i in range(n_parts)]
+    new_metadata[new_id] = [
+        f'{metadata["id"][i]}.{j}' for j in range(len(keypts)) for i in range(n_parts)]
+    new_metadata[video_key] = [
+        i for _ in range(len(keypts)) for i in range(n_parts)]
     return new_metadata, new_kpts
 
 def select_subset(metadata, keypts, ixs):

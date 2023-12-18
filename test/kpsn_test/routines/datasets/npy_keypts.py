@@ -20,6 +20,11 @@ def generate(
     if cfg['subsample'] is not None:
         keypts = keypt_io.subsample_time(keypts, cfg['subsample'])
     n_sess = len(keypts)
+
+    if cfg['split'] is not None:
+        metadata, keypts = keypt_io.split_videos(
+            metadata, keypts, cfg['split'],
+            new_id = 'id', src_id = 'src_id')
     
     align_result, centroids, rotations = alignment.sagittal_align(
         keypts, origin_keypt = cfg['origin_keypt'], return_inverse = True)
@@ -76,5 +81,6 @@ defaults = dict(
     origin_keypt = 'hips',
     jitter = None,
     jitter_seed = 0,
-    whitelist = None
+    whitelist = None,
+    split = None,
 )
