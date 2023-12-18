@@ -5,6 +5,7 @@ update_pypi.sh
 /plots
 /results
 /test/runs
+/test/cfgs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

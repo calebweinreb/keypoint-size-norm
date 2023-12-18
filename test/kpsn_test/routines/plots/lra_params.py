@@ -27,6 +27,7 @@ def plot(
     fig, axes = plt.subplots(1 + hyperparams.L, 1,
         figsize = (12, 4),
         sharex = 'col')
+    if hyperparams.L == 0: axes = np.array([axes])
     ax = {'offs': axes[0], 'mode': axes[1:]}
 
     xs = []
@@ -87,7 +88,8 @@ def plot(
                 color = pal[sess_color], **line_kw)
 
     ax['offs'].set_ylabel(f"Offset\nupdates")
-    ax['mode'][0].set_ylabel(f"Mode\nupdates")
+    if hyperparams.L > 0:
+        ax['mode'][0].set_ylabel(f"Mode\nupdates")
 
     for a in axes:
         ylim = a.get_ylim()

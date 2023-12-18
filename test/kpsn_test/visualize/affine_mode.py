@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from kpsn.models.morph import affine_mode as afm
-from kpsn.util import alignment
+
 
 from .diagram_plots import plot_mouse
 from . import defaults
@@ -18,6 +18,21 @@ def mode_quantiles(
     ) -> Float[Array, "*#K L"]:
     coords, components, complement = afm.mode_components(params, poses)
     return jnp.quantile(coords, quantile, axis = -2)
+
+
+def reconst_feat_with_params(ref_feats, ref_ix, params, N):
+    """
+    Transform `ref_feats` to bodies of `N` animals under given params."""
+
+    pose = afm.inverse_transform(
+        params, ref_feats, ref_ix)
+    
+    copied_poses = jnp.concatenate([pose for _ in range(N)])
+    n_frame = len(ref_feats) 
+    subj_ids = jnp.broadcast_to(jnp.arange(N)[:, None], [N, n_frame]).ravel()
+
+    return afm.transform(params, copied_poses, subj_ids)
+
 
 
 def mode_body_diagrams(

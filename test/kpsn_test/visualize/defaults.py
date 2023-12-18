@@ -10,3 +10,5 @@ age_pal_from_unique = lambda age_keys, func: dict(zip(
 ))
 age_pal = lambda ages, func=hls_pal: age_pal_from_unique(
     keypt_io.get_groups_dict(ages)[0], func)
+
+legend_kw = dict(bbox_to_anchor = (1, 0.5), loc = 'center left', frameon = False)

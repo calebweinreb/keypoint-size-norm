@@ -6,3 +6,4 @@ from . import fitting
 from . import mixtures
 from . import morphs
 from . import struct
+from . import model_compare

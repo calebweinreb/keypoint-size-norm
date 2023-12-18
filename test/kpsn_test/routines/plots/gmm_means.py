@@ -17,6 +17,9 @@ def plot(
     fig, ax = plt.subplots(
         hyperparams.L, 2, figsize = (3 * 2, 2 * hyperparams.L),
         sharex = True, sharey = True)
+    print("ax:", ax.shape)
+    ax = ax.reshape([-1, 2])
+    print("new ax:", ax.shape)
 
     for i_comp in range(hyperparams.L):
         for (curr_param, color, label, scatt_kw) in [

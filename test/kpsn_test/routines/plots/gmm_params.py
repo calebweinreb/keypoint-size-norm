@@ -34,7 +34,7 @@ def plot(
         for param in params
     }
     fig = {param: fax[param][0] for param in params}
-    ax  = {param: fax[param][1] for param in params}
+    ax  = {param: np.array(fax[param][1]).reshape([-1]) for param in params}
 
 
     # ----- empty lists of parameter changes over m steps

@@ -2,8 +2,11 @@ import importlib.util
 import joblib as jl
 import os.path
 import time
-import json
+from ruamel.yaml import YAML
+import pathlib
 
+def _read_yml(path):
+    return YAML().load(pathlib.Path(path.strip()))
 
 def find_file(key, fmt, override_paths = None, fallback_fmt = None):
     if override_paths is not None and key in override_paths:
@@ -59,9 +62,8 @@ def load_cfg(string):
         return {}
     elif isinstance(string, dict):
         return deepen_dict(string)
-    elif string.endswith('.json'):
-        with open(string) as f:
-            return json.load(f)
+    elif string.endswith('.yml'):
+        return _read_yml(string)
     else:
         def try_eval(s):
             try: return eval(s)
@@ -73,9 +75,8 @@ def load_cfg(string):
                 kv = kv[0]
                 if kv == '':
                     continue
-                elif kv.endswith('.json'):
-                    with open(kv) as f:
-                        nested_kvs = json.load(f)
+                elif kv.endswith('.yml'):
+                    nested_kvs = _read_yml(kv)
                     nested_kvs = deepen_dict(nested_kvs)
                     ret = update(ret, nested_kvs, warn_not_present=False, add=True)
                 else:
@@ -138,24 +139,26 @@ def update(default, new, warn_not_present = True, add = False):
 
 def sort_cfg_list(args, shorthands = {}, base = None):
     """
-    In: "d@key=value:key1=value1#kevals.json"
-    kevals.json = {d: {key2: value2}}
+    In: "d@key=value:key1=value1#kevals.yml"
+    kevals.yml = {d: {key2: value2}}
     Out: dict(d = ["key=value:key1=value1", {key2: value2}])
     
-    Or if shorthands = dict(d = data) with keyvals.json still {d: ...}
-    In: "data#key=value:key1=value1" "kevals.json"
+    Or if shorthands = dict(d = data) with keyvals.yml still {d: ...}
+    In: "data#key=value:key1=value1" "kevals.yml"
     Out: dict(data = ["key=value:key1=value1", {key2: value2}])
     """
     sorted_pairs = []
     for cfg_strs in args:
         for cfg_str in cfg_strs.split('#'):
-            if cfg_str.endswith('.json'):
-                with open(cfg_str) as f:
-                    cfg_data = json.load(f)
-                    for cfg_for, cfg_value in cfg_data:
-                        if cfg_for in shorthands:
-                            cfg_for = shorthands[cfg_for]
-                        sorted_pairs.append((cfg_for, cfg_value))
+            cfg_str = cfg_str.strip()
+            
+            if cfg_str.endswith('.yml'):
+                cfg_data = _read_yml(cfg_str)
+                for cfg_for, cfg_value in cfg_data.items():
+                    if cfg_for in shorthands:
+                        cfg_for = shorthands[cfg_for]
+                    sorted_pairs.append((cfg_for, cfg_value))
+                    
             else:
                 split_str = cfg_str.split('@')
                 if len(split_str) != 2:

@@ -4,7 +4,7 @@ import numpy as np
 
 from jax import tree_util as pt
 
-from kpsn.util.keypt_io import keypt_parents
+from kpsn.util.keypt_io import keypt_parents, to_flat_array, ids_from_slices
 
 def tree_unique(tree):
     return pt.tree_reduce(lambda a, b:
@@ -90,6 +90,39 @@ def frame_examples(query_frames, library_frames):
     """
     return (query_frames[:, None] == library_frames[None, :]).argmax(axis = 1)
 
+
+def matching_dataset(feats, slices, frame_ids):
+    """
+    Construct matching
+    """
+    # make frame map between videos
+    if frame_ids is None:
+        print('warning: added frame identity map')
+        shared_frame_ids = np.arange(feats.shape[0] // len(slices))
+        frame_ids = {k: shared_frame_ids for k in slices}
+    else:
+        frame_ids = frame_ids
+
+    # find matching frames across videos
+    valid_frames = valid_display_frames(frame_ids.values())
+    use_frames = {
+        k: frame_examples(valid_frames, ids)
+        for k, ids in frame_ids.items()}
+    
+    # format outputs
+    feats_dict = {
+        sess: feats[slc][use_frames[sess]]
+        for sess, slc in slices.items()}
+    new_slices, new_all_feats = to_flat_array(feats_dict)
+    new_sess_ix, new_subj_ids = ids_from_slices(new_all_feats, new_slices)
+    return (feats_dict,
+        dict(
+            keypts = new_all_feats,
+            subject_ids = new_subj_ids),
+        dict(
+            session_slice = new_slices,
+            session_ix = new_sess_ix,
+        ))
 
 
 def voronoi_finite_polygons_2d(vor, radius=None):

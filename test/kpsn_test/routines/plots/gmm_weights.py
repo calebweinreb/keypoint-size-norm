@@ -20,6 +20,7 @@ def plot(
     fig, ax = plt.subplots(hyperparams.L, 2, 
         sharey = True, sharex = True,
         figsize = (3 * 2, hyperparams.L * 1.5))
+    ax = ax.reshape([-1, 2])
     group_keys, groups = keypt_io.get_groups_dict(meta[cfg['colorby']])
     pal = viz.defaults.age_pal(meta[cfg['colorby']])
 

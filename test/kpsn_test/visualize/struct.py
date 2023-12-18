@@ -64,6 +64,9 @@ def flat_grid(total, n_col, ax_size, subplot_kw = {}, return_grid = False):
         n_row, n_col,
         figsize = (ax_size[0] * n_col, ax_size[1] * n_row),
         **subplot_kw)
+    ax = np.array(ax)
+    if ax.ndim == 1: ax = ax[None, :]
+    elif ax.ndim == 0: ax = ax[None, None]
     ax_ravel = ax.ravel()
     for a in ax_ravel[total:]:
         a.set_axis_off()
