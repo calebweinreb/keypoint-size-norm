@@ -13,6 +13,7 @@ defaults = dict(
     ),
     init = dict(
         uniform = False,
-        fit_to_all_subj = False
+        fit_to_all_subj = False,
+        subsample = False
     )
 )

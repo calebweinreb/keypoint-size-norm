@@ -20,7 +20,7 @@ def mode_quantiles(
     return jnp.quantile(coords, quantile, axis = -2)
 
 
-def reconst_feat_with_params(ref_feats, ref_ix, params, N):
+def reconst_feat_with_params(ref_feats, ref_ix, params, N, subj_ixs = None, return_subj_ids = False):
     """
     Transform `ref_feats` to bodies of `N` animals under given params."""
 
@@ -30,8 +30,12 @@ def reconst_feat_with_params(ref_feats, ref_ix, params, N):
     copied_poses = jnp.concatenate([pose for _ in range(N)])
     n_frame = len(ref_feats) 
     subj_ids = jnp.broadcast_to(jnp.arange(N)[:, None], [N, n_frame]).ravel()
+    if subj_ixs is not None:
+        subj_ids = jnp.array(subj_ixs)[subj_ids]
 
-    return afm.transform(params, copied_poses, subj_ids)
+    ret = afm.transform(params, copied_poses, subj_ids)
+    if return_subj_ids: ret = (ret, subj_ids)
+    return ret
 
 
 
@@ -72,8 +76,8 @@ def mode_body_diagrams(
     for i_subj, vid_id in enumerate(plot_subset):
         vid_ix = session_ixs[vid_id]
 
+        offset = (params.offset + params.offset_updates[vid_ix])
         for a in ax[1:, i_subj].ravel():
-            offset = (params.offset + params.offset_updates[vid_ix])
             plot_mouse(
                 keypt_frame = keypt_conv(offset).reshape(14, 3),
                 xaxis = xaxis, yaxis = yaxis, ax = a,

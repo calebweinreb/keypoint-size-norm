@@ -8,11 +8,17 @@ def keypt_errs(
     slices,
     skel = skeleton.default_armature,
     origin_keypt = 'hips',
-    single_b = False):
+    single_b = False,
+    to_kpt = None,
+    is_kpt = None):
 
-    to_kpt, _ = alignment.gen_kpt_func(feats_a, origin_keypt)
-    kpt_a = to_kpt(feats_a).reshape([-1, skel.n_kpts, 3])
-    kpt_b = to_kpt(feats_b).reshape([-1, skel.n_kpts, 3])
+    if not is_kpt:
+        if to_kpt is None:
+            to_kpt, _ = alignment.gen_kpt_func(feats_a, origin_keypt)
+        kpt_a = to_kpt(feats_a).reshape([-1, skel.n_kpts, 3])
+        kpt_b = to_kpt(feats_b).reshape([-1, skel.n_kpts, 3])
+    else:
+        kpt_a, kpt_b = feats_a, feats_b
     
     return {
         s: jnp.linalg.norm(kpt_a[slc] - (

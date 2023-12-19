@@ -13,8 +13,7 @@ def plot(
     cfg,
     **kwargs
     ):
-    
-    params = fit['fit_params'].morph
+
     meta = dataset['metadata']
 
     # --- find frames to plot
@@ -23,7 +22,9 @@ def plot(
             arr, cfg['origin_keypt'], skeleton.default_armature)
     else:
         to_kpt = lambda arr: arr
-    all_src_kpts = to_kpt(dataset['keypts'][meta['session_slice'][cfg['ref_sess']]])
+    slices = meta['session_slice']
+    ref_sess = cfg['ref_sess']
+    all_src_kpts = to_kpt(dataset['keypts'][slices[ref_sess]])
     frames = viz.diagram_plots.pose_gallery_ixs(
         all_src_kpts, skeleton.default_armature)
 
@@ -31,29 +32,27 @@ def plot(
     bodies, body_groups = keypt_io.get_groups_dict(meta[cfg['colorby']])
     pal = viz.defaults.age_pal(meta[cfg['colorby']])
 
-    fig, ax = plt.subplots(
-        nrows = 2*len(meta[cfg['colorby']]), ncols = len(frames),
-        figsize = (3 * len(frames), 4 * len(meta['session_slice'])), sharex = 'col')
+    def plot_for_params(curr_param):
 
-    for i_frame, (frame_name, frame) in enumerate(frames.items()):
-        for i_body, (body, body_group) in enumerate(zip(bodies, body_groups)):
+        reconst, subj_ids = viz.affine_mode.reconst_feat_with_params(
+            dataset['keypts'][slices[ref_sess]], meta['session_ix'][ref_sess],  
+            curr_param, len(slices), return_subj_ids = True)
+        reconst_kpts = {
+            s: to_kpt(reconst[subj_ids == meta['session_ix'][s]]).reshape([-1, 14, 3])
+            for s in slices}
 
-            tgt_sess = body_group[0]
-            src_slc = meta['session_slice'][cfg['ref_sess']]
+        fig, ax = plt.subplots(
+            nrows = 2*len(meta[cfg['colorby']]), ncols = len(frames),
+            figsize = (3 * len(frames), 4 * len(slices)), sharex = 'col')
 
-            # perform pose space transformation for both init and fitted params
-            for (curr_param, color, label) in [
-                    (init.morph, '.6', "init" if tgt_sess != cfg['ref_sess'] else None),
-                    (params, pal[body], "fit")]:
+        for i_frame, (frame_name, frame) in enumerate(frames.items()):
+            for i_body, (body, body_group) in enumerate(zip(bodies, body_groups)):
 
-                # --- hop into (src_sess morph) and out of (tgt_sess morph) pose space
-                pose = afm.inverse_transform(
-                    curr_param,
-                    dataset['keypts'][src_slc][frame],
-                    meta['session_ix'][cfg['ref_sess']])
-                reconst = afm.transform(
-                    curr_param, pose, meta['session_ix'][tgt_sess])
-                reconst_kpts = to_kpt(reconst)
+                tgt_sess = body_group[0]
+
+                # --- hop into (src_sess morph) and out of (tgt_sess morph) pose
+                # space
+                src_kpt = all_src_kpts[frame]
 
                 # --- plot results of trasnform
                 for row_ofs, xaxis, yaxis in [(0, 0, 1), (1, 0, 2)]:
@@ -61,13 +60,18 @@ def plot(
                     curr_ax = ax[2*i_body + row_ofs, i_frame]
                     dolabel = (row_ofs == 0) and (i_frame == len(frames) - 1)
 
-                    viz.diagram_plots.plot_mouse(
-                        curr_ax,
-                        reconst_kpts.reshape([14, 3]),
-                        xaxis, yaxis,
-                        scatter_kw = {'color': color},
-                        line_kw = {'color': color, 'lw': 1},
-                        label = label)
+                    # plot both reference and transformed
+                    
+                    for kpts, color, label in [(reconst_kpts[tgt_sess][frame], pal[body], tgt_sess),
+                                               (src_kpt, '.6', ref_sess)]:
+                        
+                        viz.diagram_plots.plot_mouse(
+                            curr_ax,
+                            kpts.reshape([14, 3]),
+                            xaxis, yaxis,
+                            scatter_kw = {'color': color},
+                            line_kw = {'color': color, 'lw': 1},
+                            label = label)
                     
                     if dolabel:
                         curr_ax.legend(loc = 'center left', bbox_to_anchor = (1, 0.5,), frameon = False)
@@ -76,9 +80,11 @@ def plot(
 
                     sns.despine(ax = curr_ax)
 
-    fig.tight_layout()
+        fig.tight_layout()
+        return fig
     
-    return {plot_name: fig}
+    return {f'{plot_name}-init': plot_for_params(init.morph),
+            f'{plot_name}-fit': plot_for_params(fit['fit_params'].morph)}
 
 
 defaults = dict(

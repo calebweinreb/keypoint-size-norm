@@ -473,12 +473,13 @@ def init(
             init_pts,
             (int(len(init_pts) * subsample),),
             replace = False)
+    print("num init pts:", len(init_pts))
     
     init_mix = mixture.GaussianMixture(
         n_components = hyperparams.L, 
         random_state = nr.RandomState(seed),
     )
-    init_mix = init_mix.fit(init_pts)
+    init_mix.fit(init_pts)
 
     # get component labels & counts across all subjects
     if not uniform:
@@ -493,6 +494,7 @@ def init(
         init_counts[init_counts == 0] = count_eps
     else:
         init_counts = np.ones([hyperparams.N, hyperparams.L])
+
 
     # Correct any negative eigenvalues
     # In the case of a non positive semidefinite covariance output by

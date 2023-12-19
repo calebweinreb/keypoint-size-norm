@@ -151,6 +151,7 @@ def sort_cfg_list(args, shorthands = {}, base = None):
     for cfg_strs in args:
         for cfg_str in cfg_strs.split('#'):
             cfg_str = cfg_str.strip()
+            if cfg_str == '': continue
             
             if cfg_str.endswith('.yml'):
                 cfg_data = _read_yml(cfg_str)

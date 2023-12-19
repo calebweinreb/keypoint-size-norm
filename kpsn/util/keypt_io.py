@@ -170,9 +170,9 @@ def split_videos(metadata, keypts, n_parts, video_key = 'subj_vid', new_id = 'sp
         for k, v in metadata.items()
     }
     new_metadata[src_id] = [
-        metadata["id"][i] for j in range(len(keypts)) for i in range(n_parts)]
+        metadata["id"][j] for j in range(len(keypts)) for i in range(n_parts)]
     new_metadata[new_id] = [
-        f'{metadata["id"][i]}.{j}' for j in range(len(keypts)) for i in range(n_parts)]
+        f'{metadata["id"][j]}.{i}' for j in range(len(keypts)) for i in range(n_parts)]
     new_metadata[video_key] = [
         i for _ in range(len(keypts)) for i in range(n_parts)]
     return new_metadata, new_kpts

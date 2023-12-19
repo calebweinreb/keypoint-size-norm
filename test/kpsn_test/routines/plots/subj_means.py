@@ -3,6 +3,7 @@ import seaborn as sns
 
 from kpsn_test import visualize as viz
 from kpsn.util import skeleton, alignment, keypt_io
+import numpy as np
 
 def plot(
     plot_name,
@@ -17,6 +18,7 @@ def plot(
     obs = {sess: dataset['keypts'][meta['session_slice'][sess]]
            for sess in meta['session_slice']}
     means = {sess: arr.mean(axis = 0) for sess, arr in obs.items()}
+    global_mean = np.mean([means[sess] for sess in obs], axis = 0)
 
     N = len(obs)
     fig, ax = plt.subplots(
@@ -40,6 +42,14 @@ def plot(
                 xaxis, yaxis,
                 scatter_kw = {'color': 'k'},
                 line_kw = {'color': 'k', 'lw': 1})
+            
+            viz.diagram_plots.plot_mouse(
+                ax[i_sess, row],
+                to_kpt(global_mean).reshape([skeleton.default_armature.n_kpts, 3]),
+                xaxis, yaxis,
+                scatter_kw = {'color': '.7'},
+                line_kw = {'color': '.7', 'lw': 1}, zorder = -5)
+            
             sns.despine(ax = ax[i_sess, row])
 
         meanlab = "\ncentroid" if i_sess == 0 else ""
