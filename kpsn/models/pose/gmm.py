@@ -421,7 +421,6 @@ def init_hyperparams(
         wish_var,
         wish_dof)
 
-
 def init(
     hyperparams: GMMHyperparams,
     observations: Observations,
@@ -492,9 +491,9 @@ def init(
                 return_counts = True)
             init_counts[i_subj][uniq] = count
         init_counts[init_counts == 0] = count_eps
+
     else:
         init_counts = np.ones([hyperparams.N, hyperparams.L])
-
 
     # Correct any negative eigenvalues
     # In the case of a non positive semidefinite covariance output by
@@ -504,12 +503,13 @@ def init(
     if (hyperparams.diag_eps is not None and
             cov_eigenvalue_eps < hyperparams.diag_eps):
         cov_eigenvalue_eps = hyperparams.diag_eps
+    orig_covs = init_mix.covariances_.copy()
     cov_vals, cov_vecs = jnp.linalg.eigh(init_mix.covariances_)
     if jnp.any(cov_vals < 0):
         clipped_vals = jnp.clip(cov_vals, cov_eigenvalue_eps)
         init_mix.covariances_ = (
-            (cov_vecs[1] * clipped_vals[..., None, :]) @
-            jnp.swapaxes(cov_vecs[1], -2, -1))
+            (cov_vecs * clipped_vals[..., None, :]) @
+            jnp.swapaxes(cov_vecs, -2, -1))
         
     return GMMTrainedParams(
         subj_weight_logits = jnp.log(init_counts),
