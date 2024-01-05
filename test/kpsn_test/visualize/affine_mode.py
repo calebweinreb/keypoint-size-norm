@@ -38,6 +38,32 @@ def reconst_feat_with_params(ref_feats, ref_ix, params, N, subj_ixs = None, retu
     return ret
 
 
+def map_ids(from_ix, to_ix, mapping):
+    """
+    from_ix, to_ix : bidict[str, int]
+        Names for the ids in the source and destination id sets, indexed into
+        by the keys and values of `mapping` respectively.
+    mapping : dict[str, str]
+        Mapping between ids using the given names.
+    Returns
+    -------
+    mapping : array (max_source_id,)
+        Array where the value at index i gives the value gives `mapping[i]` if
+        ids and id names are interchangeable according to `from_ix` and `to_ix`
+    """
+    return jnp.array([
+        to_ix[mapping[from_ix.inverse[i]]]
+        for i in range(max(from_ix.inverse.keys()) + 1)])
+
+
+def map_morphology(ref_feats, topose_sess_ids, tokpt_sess_ids, params):
+    """
+    """
+    poses = afm.inverse_transform(
+        params, ref_feats, topose_sess_ids)
+    return afm.transform(params, poses, tokpt_sess_ids)
+
+
 
 def mode_body_diagrams(
     params: afm.AFMParameters,

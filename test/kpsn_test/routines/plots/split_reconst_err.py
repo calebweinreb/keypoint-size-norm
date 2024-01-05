@@ -10,6 +10,15 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import jax.tree_util as pt
 
+class ref_lookups:
+    @staticmethod
+    def dotzero(sess):
+        return sess.split('.')[0] + '.0'
+
+    @staticmethod
+    def dashprefix(sess):
+        return sess.split('-')[-1]
+
 
 def plot(
     plot_name,
@@ -22,7 +31,6 @@ def plot(
 
     # ------------------------- setup: organize data
 
-    ref_sess = cfg['ref_sess']
     origin_keypt = cfg['origin_keypt']
     stepsize = cfg['stepsize']
     colorby = cfg['colorby']
@@ -38,12 +46,20 @@ def plot(
     mstep_lengths = np.array(viz.fitting.mstep_lengths(fit['mstep_losses']))
     if param_hist[0].posespace.means.ndim > 2:
         param_hist.map(lambda arr: arr[np.arange(len(arr)), mstep_lengths - 2])
+
     
     # grab features from the reference session to transform according to
     # use_frames
     slices = meta['session_slice']
-    src_feats = dataset['keypts'][slices[ref_sess]]
-    src_kpts = to_kpt(src_feats).reshape([-1, 14, 3])
+    sessions = list(slices.keys())
+
+    ref_sessions = {}; ref_feats = {}
+    for sess in sessions:
+        ref_sessions[sess] = getattr(ref_lookups, cfg['ref_mode'])(sess)
+        ref_feats[sess] = dataset['keypts'][slices[ref_sessions[sess]]]
+        
+    ref_slices, ref_all_feats = keypt_io.to_flat_array(ref_feats)
+    tgt_sess_ix, tgt_sess_ids = keypt_io.ids_from_slices(ref_all_feats, ref_slices)
 
     steps = np.arange(0, len(mstep_lengths), stepsize)
     err_trace = logging.ReportTrace(n_steps = len(steps))
@@ -55,16 +71,17 @@ def plot(
         step_params = param_hist[step_num]
         step_params = step_params.with_hyperparams(hyperparams).morph
 
-        reconst, subj_ids = viz.affine_mode.reconst_feat_with_params(
-            src_feats, meta['session_ix'][ref_sess],  
-            step_params, len(slices), return_subj_ids = True)
-        reconst_kpts = {
-            s: to_kpt(reconst[subj_ids == meta['session_ix'][s]]).reshape([-1, 14, 3])
-            for s in sessions}
+        topose_sess_ids = viz.affine_mode.map_ids(
+            tgt_sess_ix, meta['session_ix'],
+            {s: ref_sessions[s] for s in sessions})[tgt_sess_ids]
+        tokpt_sess_ids = viz.affine_mode.map_ids(
+            tgt_sess_ix, meta['session_ix'],
+            {s: s for s in sessions})[tgt_sess_ids]
         
-        pseudoslices = {s: s for s in slices}
+        reconst = viz.affine_mode.map_morphology(
+            ref_all_feats, topose_sess_ids, tokpt_sess_ids, step_params)
         errs = viz.model_compare.keypt_errs(
-            reconst_kpts, src_kpts, pseudoslices, single_b = True, is_kpt = True)
+            reconst, ref_all_feats, ref_slices, to_kpt = to_kpt)
         err_trace.record(errs, step_i)
 
 
@@ -73,7 +90,8 @@ def plot(
     pal = viz.defaults.age_pal(meta[colorby])
     errs = err_trace.as_dict()
     avg_errs = np.stack(list(
-        e for k, e in errs.items() if k != ref_sess)).mean(axis = 0)
+        e for s, e in errs.items() if s != ref_sessions[s])
+        ).mean(axis = 0)
     sess_order = list(meta[colorby].keys())
     keypt_names = skeleton.default_armature.keypt_names
 
@@ -86,7 +104,7 @@ def plot(
         ax[i_kp].set_title(kp_name)
         if kp_name == origin_keypt: continue
         for sess in sess_order:
-            if sess == ref_sess: continue
+            if sess == ref_sessions[sess]: continue
             sess_clr = pal[meta[colorby][sess]]
 
             ax[i_kp].plot( # subj: err over fit time
@@ -110,8 +128,8 @@ def plot(
 
 
 defaults = dict(
-    ref_sess = '3wk_m0',
     origin_keypt = 'hips',
+    ref_mode = 'dotzero',
     stepsize = 3,
     colorby = 'tgt_age',
     sharey = False

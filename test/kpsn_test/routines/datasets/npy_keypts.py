@@ -20,14 +20,12 @@ def generate(
     if cfg['subsample'] is not None:
         keypts = keypt_io.subsample_time(keypts, cfg['subsample'])
 
-    if cfg['split'] is not None:
-        metadata, keypts = keypt_io.split_videos(
-            metadata, keypts, cfg['split'],
-            new_id = 'id', src_id = 'src_id')
     n_sess = len(keypts)
     
+    # align, rescale, and jitter loaded data
     align_result, centroids, rotations = alignment.sagittal_align(
         keypts, origin_keypt = cfg['origin_keypt'], return_inverse = True)
+    
     if cfg['rescale']:
         scale_result, scales = alignment.scalar_align(
             align_result, return_inverse = True)
@@ -39,20 +37,26 @@ def generate(
         rng = np.random.RandomState(cfg['jitter_seed'])
         scale_result = [arr + cfg['jitter'] * rng.randn(*arr.shape)
                         for arr in scale_result]
-        print("jittered", cfg['jitter'])
 
     # convert from list of sessions to dictionary
     sess_names = [
         f'{metadata["age"][sess_ix]}wk_m{metadata["id"][sess_ix]}'
         for sess_ix in range(n_sess)]
     by_name = lambda arr: {n: arr[i] for i, n in enumerate(sess_names)}
+    
+    proc_keypts = by_name(scale_result)
+    metadata = dict(
+        centroid = by_name(centroids),
+        rotation = by_name(rotations),
+        scale = by_name(scales),
+        **{k: by_name(v) for k, v in metadata.items()}
+    )
 
-    metadata = {k: by_name(v) for k, v in metadata.items()}
-    slices, all_keypts = keypt_io.to_flat_array(by_name(scale_result))
-    centroids = by_name(centroids)
-    rotations = by_name(rotations)
-    scales = by_name(scales)
+    if cfg['split'] is not None:
+        metadata, proc_keypts = keypt_io.split_videos_dict(
+            metadata, proc_keypts, cfg['split'])
 
+    slices, all_keypts = keypt_io.to_flat_array(proc_keypts)
     id_by_name, session_ids = keypt_io.ids_from_slices(all_keypts, slices)
 
     all_feats = keypt_io.to_feats(all_keypts)
@@ -66,9 +70,6 @@ def generate(
     return (n_sess, all_feats.shape[-1]), gt_obs, dict(
         session_slice = slices,
         session_ix = id_by_name,
-        centroid = centroids,
-        rotation = rotations,
-        scale = scales,
         **metadata)
 
 

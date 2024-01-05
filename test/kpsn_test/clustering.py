@@ -130,4 +130,3 @@ def cluster_and_resample(
         resampled = samp_keypts,
         counts = samp_counts
     )
-

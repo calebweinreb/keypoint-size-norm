@@ -38,25 +38,23 @@ def generate(
         for age, age_group in zip(ages, age_groups)}
     
     # --- generate new dictionary of sessions with rescaled bones
-    src_sess = cfg['src_sess']
-    slc = slices[src_sess]
-    src_age = metadata['age'][src_sess]
-    
-    remap_bones = {src_sess: all_bones[slc]}
-    remap_roots = {src_sess: all_roots[slc]}
-    remap_meta = {f'src-{k}': {src_sess: metadata[k][src_sess]} for k in metadata}
-    remap_meta['tgt_age'] = {src_sess: src_age}
-    
-    for tgt_age in tgt_ages:
-        if tgt_age == src_age: pass
+    if isinstance(cfg['src_sess'], str):
+        src_sessions = [cfg['src_sess']]
+    else: src_sessions = cfg['src_sess']
 
-        new_sess = f'{tgt_age}wk_m{metadata["id"][src_sess]}'
-        length_ratios = (age_lengths[tgt_age] / age_lengths[src_age]) ** cfg['effect']
-        remap_bones[new_sess] = all_bones[slc] * length_ratios[None, :, None]
-        for k in metadata:
-            remap_meta[f'src-{k}'][new_sess] = metadata[k][src_sess]
-        remap_meta['tgt_age'][new_sess] = tgt_age
-        remap_roots[new_sess] = all_roots[slc]
+    ages = metadata['age']
+    length_ratios = {sess: {
+        f'{tgt_age}wk': (age_lengths[tgt_age] / age_lengths[ages[sess]]) ** cfg['effect']
+        for tgt_age in tgt_ages if tgt_age != ages[sess]}
+        for sess in src_sessions}
+    
+    remap_meta, remap_roots, remap_bones = skeleton.apply_bone_scales(
+        metadata,
+        {s: all_roots[slices[s]] for s in src_sessions},
+        {s: all_bones[slices[s]] for s in src_sessions},
+        scales = length_ratios,
+        scale_key = 'tgt_age'
+    )
 
     # --- convert out of bone space and perform with scaling/alignment
     sessions = remap_bones.keys()
@@ -74,6 +72,7 @@ def generate(
     remap_slices, remap_all_keypts = keypt_io.to_flat_array(
         {s: k for s, k in zip(sessions, remap_keypts)})
     remap_all_feats = keypt_io.to_feats(remap_all_keypts)
+
     if cfg['output_indep']:
         remap_all_feats = alignment.sagittal_align_remove_redundant_subspace(
             remap_all_feats,
@@ -88,13 +87,14 @@ def generate(
         keypts = remap_all_feats,
         subject_ids = remap_sess_ids)
 
-    return (len(ages), remap_all_feats.shape[-1]), remap_obs, dict(
+    return (len(remap_id_by_name), remap_all_feats.shape[-1]), remap_obs, dict(
         session_slice = remap_slices,
         session_ix = remap_id_by_name,
         centroid = {sess_name: remap_meta['src-centroid'] for sess_name in sessions},
         rotation = {sess_name: remap_meta['src-rotation'] for sess_name in sessions},
         scale = scales,
         armature = skel,
+        sess = {sess: sess for sess in sessions},
         **{k: v for k, v in remap_meta.items() if k not in [
             'src-session_slice', 'src-session_ix',
             'src-centroid', 'src-rotation', 'src-scale']}

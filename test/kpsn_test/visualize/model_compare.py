@@ -11,6 +11,11 @@ def keypt_errs(
     single_b = False,
     to_kpt = None,
     is_kpt = None):
+    """
+    Returns
+    -------
+    errs : dict[session_name, array (n_kpts,)]
+    """
 
     if not is_kpt:
         if to_kpt is None:

@@ -98,8 +98,7 @@ def matching_dataset(feats, slices, frame_ids):
     # make frame map between videos
     if frame_ids is None:
         print('warning: added frame identity map')
-        shared_frame_ids = np.arange(feats.shape[0] // len(slices))
-        frame_ids = {k: shared_frame_ids for k in slices}
+        frame_ids = {k: np.arange(len(feats[slc])) for k, slc in slices.items()}
     else:
         frame_ids = frame_ids
 
@@ -123,6 +122,7 @@ def matching_dataset(feats, slices, frame_ids):
             session_slice = new_slices,
             session_ix = new_sess_ix,
         ))
+    
 
 
 def voronoi_finite_polygons_2d(vor, radius=None):

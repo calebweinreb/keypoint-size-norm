@@ -157,5 +157,46 @@ def scalar_joint_angles(keypts, armature = armature):
     return cos_angles
 
 
+# Common skeleton-based operations
+# -----------------------------------------------------------------------------
 
 
+def apply_bone_scales(metadata, roots, bones, scales, scale_key = 'scale'):
+    """
+    metadata : dict[dict[str, Any]]
+        For each metadata field (first key) a mapping from session names
+        (second key) to metadata values
+    data : dict[str, array ()]
+    scales: dict[str, dict[str, array (n_bones,)]]
+        For each session name, a mapping between scale names (eg 5wk) and
+        arrays of scale factors for each bone.
+    """
+    src_sessions = list(bones.keys())
+    tgt_scales = list(list(scales.values())[0].keys())
+
+    remap_bones = {}
+    remap_roots = {}
+    remap_meta = {'tgt_age': {},
+                  **{f'src-{k}': {} for k in metadata}}
+    
+    for src_sess in src_sessions:
+        
+        # create the target age
+        remap_bones[src_sess] = bones[src_sess]
+        remap_roots[src_sess] = roots[src_sess]
+        for k in metadata:
+            remap_meta[f'src-{k}'][src_sess] = metadata[k][src_sess]
+        remap_meta[scale_key][src_sess] = 'none'
+        
+        for tgt_scale in tgt_scales:
+
+            new_sess = f'{tgt_scale}-{src_sess}'
+            # length_ratios = (age_lengths[tgt_age] / age_lengths[src_age]) ** cfg['effect']
+            length_ratios = scales[src_sess][tgt_scale]
+            remap_bones[new_sess] = bones[src_sess] * length_ratios[None, :, None]
+            for k in metadata:
+                remap_meta[f'src-{k}'][new_sess] = metadata[k][src_sess]
+            remap_meta[scale_key][new_sess] = tgt_scale
+            remap_roots[new_sess] = roots[src_sess]
+
+    return remap_meta, remap_roots, remap_bones

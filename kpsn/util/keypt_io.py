@@ -177,6 +177,29 @@ def split_videos(metadata, keypts, n_parts, video_key = 'subj_vid', new_id = 'sp
         i for _ in range(len(keypts)) for i in range(n_parts)]
     return new_metadata, new_kpts
 
+def split_videos_dict(
+    metadata, keypts, n_parts,
+    video_key = 'subj_vid',
+    src_key = 'presplit',
+    name_fmt = lambda sess, i: f'{sess}.{i}'
+    ):
+
+    split_kpts = {}
+    new_metadata = {video_key: {}, src_key: {}, **{k: {} for k in metadata}}
+    for src_sess in keypts:
+
+        split_arrs = np.array_split(keypts[src_sess], n_parts)
+        for i, arr in enumerate(split_arrs):
+            sess_name = name_fmt(src_sess, i)
+            split_kpts[sess_name] = arr
+        
+            for k in metadata:
+                new_metadata[k][sess_name] = metadata[k][src_sess]
+            new_metadata[video_key][sess_name] = i
+            new_metadata[src_key][sess_name] = src_sess
+
+    return new_metadata, split_kpts
+
 def select_subset(metadata, keypts, ixs):
     new_kpts = [keypts[i] for i in ixs]
     new_metadata = {k: [v[i] for i in ixs] for k, v in metadata.items()}

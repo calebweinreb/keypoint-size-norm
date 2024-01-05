@@ -472,7 +472,6 @@ def init(
             init_pts,
             (int(len(init_pts) * subsample),),
             replace = False)
-    print("num init pts:", len(init_pts))
     
     init_mix = mixture.GaussianMixture(
         n_components = hyperparams.L, 
