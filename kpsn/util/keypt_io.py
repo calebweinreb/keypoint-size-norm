@@ -105,6 +105,7 @@ def npy_dataset(dirname, whitelist = None, name_func = modata_name_func):
         Keypoint data.
     """
     glob_files = sorted(glob.glob(f'{dirname}/*.npy'))
+    
     if whitelist is not None:
         if isinstance(whitelist, str):
             with open(whitelist, 'r') as f:
@@ -121,7 +122,7 @@ def npy_dataset(dirname, whitelist = None, name_func = modata_name_func):
     
     meta, keypts = npy_file_dataset(files)
     meta['file'] = files
-
+    
     return meta, keypts
 
 def npy_file_dataset(files):
@@ -319,3 +320,4 @@ def apply_across_flat_array(f, slices, *arrays):
     return {
         vid: f(vid, *(arr[slices[vid]] for arr in arrays))
         for vid in slices}
+
