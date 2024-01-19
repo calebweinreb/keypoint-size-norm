@@ -64,6 +64,35 @@ def map_morphology(ref_feats, topose_sess_ids, tokpt_sess_ids, params):
     return afm.transform(params, poses, tokpt_sess_ids)
 
 
+def to_refs(feats, ref_sess, morph_params, morph_ixs, sess_ix, sess_ids):
+    """Map morphology of each session to a reference session.
+    
+    Parameters
+    ----------
+    feats : array, (frames, feats)
+    ref_sess : str
+        Name of the reference session to map to in the `ix` dictionaries.
+    morph_params : AFMParameters
+        Parameters to use for the mapping.
+    morph_ixs : bidict[str, int]
+        Mapping of sesion names to indices in `morph_params`.
+    sess_ix : list[str]
+        Mappping of session names to indices in `sess_ids`.
+    sess_ids : array (frames,)
+        Session ids for each frame in `feats`.
+    """
+    # body to use for each session ix mapping to or from pose space
+    topose_sess_ids = map_ids(
+        sess_ix, morph_ixs,
+        {s: s for s in sess_ix.keys()})[sess_ids]
+    tokpt_sess_ids = map_ids(
+        sess_ix, morph_ixs,
+        {s: ref_sess for s in sess_ix.keys()})[sess_ids]
+    
+    reconst = map_morphology(
+        feats, topose_sess_ids, tokpt_sess_ids, morph_params)
+    return reconst
+
 
 def mode_body_diagrams(
     params: afm.AFMParameters,

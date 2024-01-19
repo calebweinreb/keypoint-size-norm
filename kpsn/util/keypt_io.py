@@ -206,6 +206,13 @@ def select_subset(metadata, keypts, ixs):
     new_metadata = {k: [v[i] for i in ixs] for k, v in metadata.items()}
     return new_metadata, new_kpts
 
+
+def get_flat_subset(session_names, slices, keypts):
+    new_feats = {s: keypts[slices[s]] for s in session_names}
+    new_slices, all_new_feats = to_flat_array(new_feats)
+    new_sess_ix, new_sess_ids = ids_from_slices(all_new_feats, new_slices)
+    return new_feats, all_new_feats, new_slices, new_sess_ix, new_sess_ids
+
 def subsample_time(kpts, factor):
     return [k[::factor] for k in kpts]
 

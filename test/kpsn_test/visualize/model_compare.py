@@ -1,5 +1,5 @@
 
-from kpsn.util import alignment, skeleton
+from kpsn.util import alignment, skeleton, simple_density as density
 import jax.numpy as jnp
 
 def keypt_errs(
@@ -30,3 +30,15 @@ def keypt_errs(
             kpt_b if single_b else kpt_b[slc]
         ), axis = -1).mean(axis = 0)
         for s, slc in slices.items()}
+
+
+def distances_to_cloud(ref_cloud, feats, slices, density_kw):
+    # initialize clouds for feats in each non-ref session
+    clouds = {
+        s: density.PointCloudDensity(**density_kw).fit(feats[slc])
+        for s, slc in slices.items()}
+    # distances from these clouds to precomputed reference clouds
+    return jnp.array([
+        density.ball_cloud_js(
+            ref_cloud, clouds[s])
+        for s in slices.keys()])

@@ -17,6 +17,14 @@ def mstep_lengths(mstep_losses):
     return mstep_lengths
 
 
+def flatten_trace(mstep_losses, trace,):
+    """Take the last entry from each m-step in a trace."""
+    trace = trace.copy()
+    mstep_lengths = np.array(mstep_lengths(mstep_losses))
+    trace.map(lambda arr: arr[np.arange(len(arr)), mstep_lengths - 2])
+    return trace
+
+
 def em_loss(loss_hist, mstep_losses, mstep_relative = True):
     fig, ax = plt.subplots(figsize = (9, 1.7), ncols = 3)
     

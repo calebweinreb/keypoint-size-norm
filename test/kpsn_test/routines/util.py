@@ -181,5 +181,24 @@ def sort_cfg_list(args, shorthands = {}, base = None):
     
     return sorted_cfgs
         
-            
-                    
+
+def reload_routine(
+    routine_name,
+    cfg_path,
+    cfg_key,
+    cfg_override):
+    """Load a routine with saved config"""
+    routine = load_routine(routine_name)
+    with open(cfg_path, 'r') as f:
+        cfg = YAML().load(f)[cfg_key]
+    cfg = update(routine.defaults, cfg, add = True)
+    cfg = update(cfg, cfg_override, add = True)
+    return routine, cfg
+
+
+def call_with_config(func, routine, cfg):
+    """Call method from a routine with given config"""
+    return getattr(routine, func)(cfg = cfg)
+
+
+

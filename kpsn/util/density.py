@@ -252,25 +252,38 @@ def cloud_js(cloud_a, cloud_b, cloud_a_pdf = None, cloud_b_pdf = None):
     kl_b_to_mix = np.sum((np.log(cloud_b_pdf) - logmix_at_b) * b_pt_weights)
     
     return 0.5 * (kl_a_to_mix + kl_b_to_mix)
-    # return kl_b_to_mix
 
 
-def predict_mixture(cloud_a, cloud_b, x, k, a_dists = None, b_dists = None):
+def predict_mixture(cloud_a, cloud_b, x, a_dists = None, b_dists = None):
 
     k = cloud_a._k
-    if k != cloud_b.k: print("density.predict_mixture: k mismatch!")
+    if k != cloud_b._k: print("density.predict_mixture: k mismatch!")
+    if cloud_a._n != cloud_b._n: print("density.predict_mixture: n mismatch!")
 
     # distance to k nearest neighbors for each cloud
     if a_dists is None: a_dists = cloud_a._tree.query(x, k = k)[0]
     if b_dists is None: b_dists = cloud_b._tree.query(x, k = k)[0]
-    
+
     # k nearest out of these 2k neighbors
     all_dists = np.concatenate([a_dists, b_dists], axis = -1)
-    kth_dist_mix = np.partition(all_dists, [k - 1, k], axis = -1)[k]
-
+    kth_dist_mix = np.partition(all_dists, [k - 1, k], axis = -1)[:, k-1]
+    
     return a_dists[:, -1], b_dists[:, -1], kth_dist_mix
 
 
+def entropic_jsd(cloud_a, cloud_b):
+    a_dists, _, mix_dists_a = predict_mixture(cloud_a, cloud_b, cloud_a._tree.data)
+    _, b_dists, mix_dists_b = predict_mixture(cloud_a, cloud_b, cloud_b._tree.data)
+    mix_normalizer = (cloud_a._k - 1) / (cloud_a._n + cloud_b._n)
+    pdf_a = (cloud_a._k - 1) / cloud_a._n / ball_volume(a_dists, 1)
+    pdf_b = (cloud_b._k - 1) / cloud_b._n / ball_volume(b_dists, 1)
+    mix_pdf_a = mix_normalizer / ball_volume(mix_dists_a, 1)
+    mix_pdf_b = mix_normalizer / ball_volume(mix_dists_b, 1)
+    a_entropy = -np.mean(np.log(pdf_a))
+    b_entropy = -np.mean(np.log(pdf_b))
+    mix_entropy = -np.mean(np.log(np.concatenate([mix_pdf_a, mix_pdf_b])))
+    print(mix_entropy, a_entropy, b_entropy)
+    return mix_entropy - 0.5 * (a_entropy + b_entropy)
 
 
 def pairwise_mixture_logprob(cloud_a, cloud_b, cloud_a_pdf, cloud_b_pdf):
